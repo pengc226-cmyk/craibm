@@ -68,6 +68,7 @@ RUN install2.r --error --skipinstalled \
       ps \
       jsonlite \
       httr \
+      future \
       openssl
 
 COPY . /opt/craibm_src
