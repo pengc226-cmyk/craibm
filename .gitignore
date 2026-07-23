@@ -9,6 +9,7 @@
 *.tar.gz
 
 src/*.o
+src/*.obj
 src/*.so
 src/*.dll
 
