@@ -1,0 +1,48 @@
+Package: craibm
+Title: Individual-Based Model for Sportfish Population Simulation
+Version: 0.2.9
+Authors@R: person("Developer", "Name", email = "dev@example.com", role = c("aut", "cre"))
+Description: Shiny application for parameterizing and running individual-based
+    models for sportfish populations with parallel batch simulation.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Depends: R (>= 4.1.0)
+SystemRequirements: C++17, GNU make
+    Windows: Rtools (https://cran.r-project.org/bin/windows/Rtools/)
+    macOS: Xcode Command Line Tools (xcode-select --install)
+    Linux: GCC/G++ with development headers (e.g. build-essential)
+Imports:
+    shiny,
+    bs4Dash,
+    DT,
+    Rcpp,
+    RcppArmadillo,
+    foreach,
+    doParallel,
+    parallel,
+    data.table,
+    dplyr,
+    tidyr,
+    ggplot2,
+    scales,
+    readr,
+    readxl,
+    car,
+    lme4,
+    FSA (>= 0.10.0),
+    stringr,
+    purrr,
+    shinyFiles,
+    fs,
+    waiter,
+    shinyjs,
+    callr,
+    lmeresampler,
+    ps,
+    jsonlite,
+    httr,
+    openssl
+LinkingTo:
+    Rcpp,
+    RcppArmadillo
+RoxygenNote: 7.3.3
