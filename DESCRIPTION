@@ -1,6 +1,6 @@
 Package: craibm
 Title: Individual-Based Model for Sportfish Population Simulation
-Version: 0.2.9
+Version: 0.2.10
 Authors@R: person("Developer", "Name", email = "dev@example.com", role = c("aut", "cre"))
 Description: Shiny application for parameterizing and running individual-based
     models for sportfish populations with parallel batch simulation.
@@ -12,7 +12,9 @@ SystemRequirements: C++17, GNU make
     macOS: Xcode Command Line Tools (xcode-select --install)
     Linux: GCC/G++ with development headers (e.g. build-essential)
 Imports:
-    shiny,
+    shiny (>= 1.8.1),
+     promises,
+    future,
     bs4Dash,
     DT,
     Rcpp,
