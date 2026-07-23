@@ -1,10 +1,17 @@
 suppressPackageStartupMessages({
-  library(shiny)       
+  library(shiny)
+  library(promises)
+  library(future)
   library(bs4Dash)
   library(dplyr)
   library(ggplot2)
   library(craibm)       
 })
+
+# The cloud watcher must run outside the main Shiny process so network waits
+# cannot block or grey out the page.
+future::plan(future::multisession, workers = 2)
+
 
 
 
@@ -1528,85 +1535,297 @@ Tips:
         )
       ),
       
-      tabItem(tabName = "sim",
-              fluidRow(
-                # Controls Box
-                box(title = "Test Simulation", width = 4, status = "primary", solidHeader = TRUE, collapsible = TRUE,
-                    uiOutput("test_selectors"),
-                    helpText(
-                      "Note: Running the test model is recommended. ",
-                      "The test uses all selected data and parameters, runs all policies ",
-                      "for one selected scenario, and completes one iteration. ",
-                      "After the test finishes, the app estimates the time required for ",
-                      "the full simulation. Use the diagnostic plot to assess whether the ",
-                      "selected simulation duration is adequate."
-                    ),
-                    selectInput("test_var_y", "Variable to Plot:",
-                                choices = c(
-                                  "Spawning fish density" = "Sden",
-                                  "Recruit density" = "Rden",
-                                  "Adult abundance" = "AdultN",
-                                  "Recruit (fishery) abundance" = "AgeFRN",
-                                  "Yield (number)" = "Yield_n",
-                                  "Population size" = "N_pop",
-                                  "PSD (Quality)" = "PSD_Q",
-                                  "PSD (Preferred)" = "PSD_P",
-                                  "PSD (Memorable)" = "PSD_M",
-                                  "PSD (Trophy)" = "PSD_T",
-                                  "Angler Encounters (Quality)" = "Enc_Q",
-                                  "Angler Encounters (Preferred)" = "Enc_P",
-                                  "Angler Encounters (Memorable)" = "Enc_M",
-                                  "Angler Encounters (Trophy)"= "Enc_T",
-                                  "Months of Trophy Seen"="trophy_seen" 
-                                )
-                    ),
-                    
-                    shiny::actionButton("run_test_sim", "Run Model Validation", class="btn-success", width="100%"),
-                    helpText("Runs one selected scenario and one replicate to verify model",
-                             "outputs and produce the diagnostic plot. It does not test",
-                             "replicate-level parallelism."),
-                    br(),
-                    verbatimTextOutput("log_step2a"),
-                    
-                    hr(),
-                    tags$h5(icon("shield-alt"), "Parallel performance check"),
-                    helpText("Checks your selected policy and individual thread settings,",
-                             "then runs a limited number of replicate workers concurrently to",
-                             "estimate CPU contention and memory demand."),
-                    checkboxInput(
-                      "stress_use_all_workers",
-                      paste0(
-                        "Benchmark the full configured replicate load ",
-                        "(higher crash risk; memory pre-check applies)"
-                      ),
-                      value = FALSE
-                    ),
-                    
-                    helpText(
-                      "When unchecked, the benchmark limits replicate workers according to ",
-                      "the number of jobs and the nominal CPU-thread capacity. When checked, ",
-                      "it tests the actual full-run replicate-worker count, provided the ",
-                      "memory pre-check does not block the test."
-                    ),
-                    shiny::actionButton("run_oversub_test", "Parallel performance check",
-                                        class = "btn-warning", width = "100%", icon = icon("microchip")),
-                    helpText(tags$b("Must be done before running full simulations.")),
-                    br(),
-                    verbatimTextOutput("log_oversub")
-                    
-                ),
+      tabItem(
+        tabName = "sim",
+        
+        fluidRow(
+          box(
+            title = "Step 3a: Test Simulation",
+            width = 12,
+            status = "primary",
+            solidHeader = TRUE,
+            collapsible = TRUE,
+            
+            bs4Dash::tabsetPanel(
+              id = "test_sim_tabs",
+              
+              # ============================================================
+              # About Step 3a
+              # ============================================================
+              tabPanel(
+                "About Test Simulation",
+                icon = icon("circle-info"),
                 
-                # Plot Box (Replaced Table)
-                box(title = "Test Results Visualization", width = 8, status = "info", solidHeader = TRUE, collapsible = TRUE,
-                    plotOutput("test_sim_plot", height = "500px"),
+                wellPanel(
+                  style = paste0(
+                    "background-color:#f8fbff;",
+                    "border:1px solid #d7e8f7;",
+                    "margin-top:15px;"
+                  ),
+                  
+                  tags$h5("Test 1: Model Validation"),
+                  
+                  tags$p(
+                    "Test 1 is a short model check. It runs one selected scenario, ",
+                    "all policies for that scenario, and one replicate. Use the diagnostic ",
+                    "plot to determine whether the selected simulation duration is adequate."
+                  ),
+                  
+                  tags$p(
+                    "Test 1 also provides a rough estimate of the full-model calculation time. ",
+                    "The estimate is rough because this test runs only one model task and does ",
+                    "not measure how much simultaneous workers may slow each other down."
+                  ),
+                  
+                  tags$hr(),
+                  
+                  tags$h5("Test 2: Parallel Performance Check"),
+                  
+                  tags$p(
+                    "Test 2 takes longer because it runs one model worker alone and then runs ",
+                    "several model workers at the same time using the parallel settings confirmed ",
+                    "in Step 2."
+                  ),
+                  
+                  tags$p(
+                    "This test is required before the full simulation. Without a memory-safety ",
+                    "check, the full parallel plan could request more memory than the machine can ",
+                    "provide, causing workers or the entire simulation to stop."
+                  ),
+                  
+                  tags$p(
+                    "Test 2 measures the actual parallel speed and memory use of the selected ",
+                    "machine. It therefore provides a more accurate estimate of the full-model ",
+                    "calculation time than Test 1."
+                  ),
+                  
+                  tags$p(
+                    "The required safety check uses a CPU-balanced worker group to reduce the ",
+                    "risk of immediately overloading the machine. An optional full-load check ",
+                    "can then test every configured replicate worker and provide the most accurate ",
+                    "pre-run time estimate."
+                  ),
+                  
+                  tags$p(
+                    icon("book-open"),
+                    " For technical definitions and calculation details, please see the Help Guide."
+                  )
+                )
+              ),
+              
+              # ============================================================
+              # Test 1
+              # ============================================================
+              tabPanel(
+                "Test 1: Model Validation",
+                icon = icon("chart-line"),
+                
+                br(),
+                
+                fluidRow(
+                  shiny::column(
+                    width = 4,
+                    
+                    tags$div(
+                      class = "alert alert-info",
+                      style = "padding:10px;",
+                      
+                      tags$b("What does this test do?"),
+                      tags$br(),
+                      
+                      "Runs one selected scenario, all of its policies, and one ",
+                      "replicate. It checks model output and provides a rough ",
+                      "estimate of the full-model calculation time."
+                    ),
+                    
+                    uiOutput("test_selectors"),
+                    
+                    selectInput(
+                      "test_var_y",
+                      "Variable to Plot:",
+                      choices = c(
+                        "Spawning fish density" = "Sden",
+                        "Recruit density" = "Rden",
+                        "Adult abundance" = "AdultN",
+                        "Recruit (fishery) abundance" = "AgeFRN",
+                        "Yield (number)" = "Yield_n",
+                        "Population size" = "N_pop",
+                        "PSD (Quality)" = "PSD_Q",
+                        "PSD (Preferred)" = "PSD_P",
+                        "PSD (Memorable)" = "PSD_M",
+                        "PSD (Trophy)" = "PSD_T",
+                        "Angler Encounters (Quality)" = "Enc_Q",
+                        "Angler Encounters (Preferred)" = "Enc_P",
+                        "Angler Encounters (Memorable)" = "Enc_M",
+                        "Angler Encounters (Trophy)" = "Enc_T",
+                        "Months of Trophy Seen" = "trophy_seen"
+                      )
+                    ),
+                    
+                    actionButton(
+                      "run_test_sim",
+                      "Run Model Validation",
+                      class = "btn-success",
+                      width = "100%",
+                      icon = icon("play")
+                    ),
+                    
+                    br(),
+                    actionButton(
+                      "stop_test1_cloud",
+                      "Stop Test 1 Cloud Job",
+                      class = "btn-danger",
+                      width = "100%",
+                      icon = icon("stop"),
+                      disabled = "disabled"
+                    ),
+                    
+                    uiOutput("run_lock_note_test1"),
+                    uiOutput("cloud_watch_panel"),
+                    
+                    br(),
+                    
+                    uiOutput("cloud_validation_controls"),
+                    
+                    tags$h5("Test 1 Report"),
+                    verbatimTextOutput("log_step2a")
+                  ),
+                  
+                  shiny::column(
+                    width = 8,
+                    
+                    tags$h4("Model Validation Plot"),
+                    
+                    plotOutput(
+                      "test_sim_plot",
+                      height = "500px"
+                    ),
+                    
                     helpText(
-                      "Note: The test run shows a single-iteration trajectory (line only). ",
-                      "Refer to Step 1: Design Preview for the policy information used ",
-                      "in this simulation."
+                      "This plot shows one simulated trajectory. Use it to determine ",
+                      "whether the selected burn-in, stable, and policy periods are ",
+                      "long enough for the intended analysis."
                     )
+                  )
+                )
+              ),
+              
+              # ============================================================
+              # Test 2
+              # ============================================================
+              tabPanel(
+                "Test 2: Parallel Performance Check",
+                icon = icon("microchip"),
+                
+                br(),
+                
+                fluidRow(
+                  shiny::column(
+                    width = 4,
+                    
+                    tags$div(
+                      class = "alert alert-info",
+                      style = "padding:10px;",
+                      
+                      tags$b("What does this test do?"),
+                      tags$br(),
+                      
+                      "Runs a small amount of the real model using the parallel ",
+                      "settings confirmed in Step 2. It checks whether simultaneous ",
+                      "model workers improve speed and whether the full plan can fit ",
+                      "in memory."
+                    ),
+                    
+                    radioButtons(
+                      "perf_test_mode",
+                      "Choose the performance-check level:",
+                      
+                      choices = stats::setNames(
+                        object = c(
+                          "safe",
+                          "full"
+                        ),
+                        
+                        nm = c(
+                          paste0(
+                            "Required safety check — use a CPU-balanced worker group ",
+                            "(recommended first)"
+                          ),
+                          
+                          paste0(
+                            "Optional full-load check — use every configured replicate worker ",
+                            "(higher load and more accurate time estimate)"
+                          )
+                        )
+                      ),
+                      
+                      selected = "safe"
+                    ),
+                    
+                    uiOutput("perf_test_mode_note"),
+                    
+                    actionButton(
+                      "run_oversub_test",
+                      "Run Parallel Performance Check",
+                      class = "btn-warning",
+                      width = "100%",
+                      icon = icon("microchip")
+                    ),
+                    
+                    br(),
+                    actionButton(
+                      "stop_test2_cloud",
+                      "Stop Test 2 Cloud Job",
+                      class = "btn-danger",
+                      width = "100%",
+                      icon = icon("stop"),
+                      disabled = "disabled"
+                    ),
+                    
+                    uiOutput("run_lock_note_test2"),
+                    uiOutput("cloud_watch_panel"),
+                    
+                    helpText(
+                      tags$b(
+                        "This test must pass before running the full simulation."
+                      )
+                    ),
+                    
+                    br(),
+                    
+                    uiOutput("cloud_perf_controls")
+                  ),
+                  
+                  shiny::column(
+                    width = 8,
+                    
+                    tags$h4("Speed and Memory Report"),
+                    
+                    tags$div(
+                      class = "alert alert-light",
+                      style = "padding:9px;",
+                      
+                      "The report explains whether the selected parallel settings ",
+                      "are efficient, whether the estimated memory use is safe, and ",
+                      "approximately how long the full simulation may take."
+                    ),
+                    
+                    verbatimTextOutput("log_oversub"),
+                    
+                    helpText(
+                      icon("book-open"),
+                      " For definitions and calculation details, please see the Help Guide."
+                    )
+                  )
                 )
               )
+            )
+          )
+        )
       ),
+      
+      
+      
       tabItem(
         tabName = "run_save",
         fluidRow(
@@ -1655,59 +1874,59 @@ Tips:
                           # --- Run Mode Selector ---
                           conditionalPanel(
                             condition = "input.use_cloud != true",
-                          tags$div(
-                            style = "margin-bottom: 10px;",
-                            tags$label("Run Mode:"),
                             tags$div(
-                              style = "display: flex; gap: 20px; margin-top: 6px;",
-                              
-                              # Foreground option with tooltip
+                              style = "margin-bottom: 10px;",
+                              tags$label("Run Mode:"),
                               tags$div(
-                                title = paste0(
-                                  "Foreground mode:\n",
-                                  "✅ MRuns directly in the current Shiny/R session.\n",
-                                  "✅ Most compatible (recommended for cloud hosting like shinyapps.io / restricted environments).\n",
-                                  "⚠️ The UI may freeze during the run, and Stop cannot force-cancel once started (you must wait for completion)."
-                                ),
-                                style = "cursor: help;",
-                                tags$label(
-                                  style = "cursor: help; font-weight: normal;",
-                                  tags$input(
-                                    type = "radio",
-                                    name = "run_mode",
-                                    id   = "run_mode_fg",
-                                    value = "foreground",
-                                    checked = "checked",
-                                    style = "margin-right: 5px;"
+                                style = "display: flex; gap: 20px; margin-top: 6px;",
+                                
+                                # Foreground option with tooltip
+                                tags$div(
+                                  title = paste0(
+                                    "Foreground mode:\n",
+                                    "✅ MRuns directly in the current Shiny/R session.\n",
+                                    "✅ Most compatible (recommended for cloud hosting like shinyapps.io / restricted environments).\n",
+                                    "⚠️ The UI may freeze during the run, and Stop cannot force-cancel once started (you must wait for completion)."
                                   ),
-                                  icon("desktop"), " Foreground mode"
+                                  style = "cursor: help;",
+                                  tags$label(
+                                    style = "cursor: help; font-weight: normal;",
+                                    tags$input(
+                                      type = "radio",
+                                      name = "run_mode",
+                                      id   = "run_mode_fg",
+                                      value = "foreground",
+                                      checked = "checked",
+                                      style = "margin-right: 5px;"
+                                    ),
+                                    icon("desktop"), " Foreground mode"
+                                  )
+                                ),
+                                
+                                # Background option with tooltip
+                                tags$div(
+                                  title = paste0(
+                                    "Background mode (Run as a separate R process):\n",
+                                    "✅ MLaunches a separate R process (the app stays responsive).\n",
+                                    "✅ UI stays responsive; Stop can terminate the run immediately (kills the background process).\n",
+                                    "⚠️ May be blocked or unstable on managed school/work computers (security policies can restrict spawning processes), and may not be supported on some cloud platforms."
+                                  ),
+                                  style = "cursor: help;",
+                                  tags$label(
+                                    style = "cursor: help; font-weight: normal;",
+                                    tags$input(
+                                      type = "radio",
+                                      name = "run_mode",
+                                      id   = "run_mode_bg",
+                                      value = "background",
+                                      style = "margin-right: 5px;"
+                                    ),
+                                    icon("server"), " Background mode"
+                                  )
                                 )
                               ),
-                              
-                              # Background option with tooltip
-                              tags$div(
-                                title = paste0(
-                                  "Background mode (Run as a separate R process):\n",
-                                  "✅ MLaunches a separate R process (the app stays responsive).\n",
-                                  "✅ UI stays responsive; Stop can terminate the run immediately (kills the background process).\n",
-                                  "⚠️ May be blocked or unstable on managed school/work computers (security policies can restrict spawning processes), and may not be supported on some cloud platforms."
-                                ),
-                                style = "cursor: help;",
-                                tags$label(
-                                  style = "cursor: help; font-weight: normal;",
-                                  tags$input(
-                                    type = "radio",
-                                    name = "run_mode",
-                                    id   = "run_mode_bg",
-                                    value = "background",
-                                    style = "margin-right: 5px;"
-                                  ),
-                                  icon("server"), " Background mode"
-                                )
-                              )
-                            ),
-                            # Hidden input updated by JS so Shiny can read it
-                            tags$script(HTML("
+                              # Hidden input updated by JS so Shiny can read it
+                              tags$script(HTML("
                        $(document).on('change', 'input[name=run_mode]', function() {
                          Shiny.setInputValue('run_mode', $(this).val(), {priority: 'event'});
                        });
@@ -1716,12 +1935,15 @@ Tips:
                          Shiny.setInputValue('run_mode', 'foreground');
                        });
                      "))
+                            ),
                           ),
-                          ),
+                          
+                          uiOutput("run_lock_note_full"),
                           
                           shiny::actionButton("start_batch", "Start Simulation Run", class = "btn-success btn-lg", width = "100%", icon=icon("rocket")),
                           br(), br(),
                           shiny::actionButton("stop_batch", "Stop Simulation", class = "btn-danger", width = "100%", icon=icon("stop")),
+                          uiOutput("cloud_watch_panel"),
                           
                           # Cloud controls appear only while cloud mode is on.
                           conditionalPanel(
@@ -1867,7 +2089,10 @@ server <- function(input, output, session) {
   
   old_warn <- getOption("warn")
   options(warn = -1)
-  session$onSessionEnded(function() { options(warn = old_warn) })
+  session$onSessionEnded(function() {
+    options(warn = old_warn)
+    try(.cloud_stop_clock(), silent = TRUE)
+  })
   
   vals <- reactiveValues(theta_clean = NULL, growth_data = NULL, z_dist = NULL, alk_data = NULL,
                          alk_source = NULL, alk_info = NULL, growth_fit_note = NULL,
@@ -1886,16 +2111,23 @@ server <- function(input, output, session) {
     # Cloud run state
     cloud_auth           = NULL,
     cloud_verified       = FALSE,
+    cloud_release_offer  = FALSE,
+    active_run           = NULL,
+    active_run_mode      = NULL,
     cloud_job_id         = NULL,
+    cloud_watch_job      = NULL,
     cloud_task_type      = NULL,
     cloud_status         = NULL,   # submitted / running / done / failed / cancelled
     cloud_done           = NA_integer_,
     cloud_total          = NA_integer_,
     cloud_result_uri     = NULL,
     cloud_poll_fails     = 0L,
-    cloud_polling        = FALSE,
+    cloud_submitted_at   = NULL,
+    cloud_queue_warned   = FALSE,
     cloud_last_report    = NULL,
-    cloud_no_progress    = 0L
+    cloud_no_progress    = 0L,
+    cloud_perf_requested = NA_integer_,
+    cloud_perf_probe     = NA_integer_
   )
   
   # ===== Hardware / thread detection =====
@@ -2036,7 +2268,7 @@ server <- function(input, output, session) {
     }
     
     # ------------------------------------------------------------
-    # Global Parameters have not been submitted
+    
     # ------------------------------------------------------------
     if (
       !isTRUE(sys_status$global_ok) ||
@@ -2136,7 +2368,39 @@ server <- function(input, output, session) {
   })
   
   
-  
+  output$perf_test_mode_note <- renderUI({
+    
+    if (identical(input$perf_test_mode, "full")) {
+      
+      tags$div(
+        class = "alert alert-warning",
+        style = "padding:8px;",
+        
+        tags$b("Full-load check"),
+        tags$br(),
+        
+        "This option runs every replicate worker configured in Step 2. ",
+        "It places a heavier load on the machine but provides the most ",
+        "accurate pre-run time estimate. A memory pre-check is performed ",
+        "before concurrent workers are launched."
+      )
+      
+    } else {
+      
+      tags$div(
+        class = "alert alert-info",
+        style = "padding:8px;",
+        
+        tags$b("Required safety check"),
+        tags$br(),
+        
+        "This option selects a CPU-balanced worker group based on the machine's ",
+        "available CPU capacity and the number of threads used by each worker. ",
+        "It measures real memory use and estimates whether the complete parallel ",
+        "plan is safe before the full simulation can start."
+      )
+    }
+  })
   # run_selected_cpp() now lives in the package (helper.R) and is exported, so
   # the same dispatcher can be called from the Shiny session, from parallel
   # workers, and from a cloud container. It is referenced here unqualified and
@@ -2177,7 +2441,7 @@ server <- function(input, output, session) {
     log_runcontrol = "Waiting for run control confirmation...\n",
     log_surv  = "⚪ Waiting for survival data submission...\n",
     log_2a    = "Waiting...\n",
-    log_oversub = "Waiting for oversubscription check...\n",
+    log_oversub = "Waiting for Parallel Performance Check...\n",
     log_2b    = "Waiting...\n",
     log_3     = "Waiting to load...\n",
     batch_log = "Standby. Waiting for command..."
@@ -2245,12 +2509,23 @@ server <- function(input, output, session) {
   
   output$settings_load_log <- renderUI({
     
-    # Do not show an empty status box before a settings file is loaded.
-    if (is.null(sys_status$loaded_from)) {
+    # The panel tracks setup progress whether the data was entered here or
+    # restored from a settings file, so it is only hidden before anything at
+    # all has been supplied.
+    missing_steps <- get_missing_setup_steps()
+    
+    nothing_yet <- length(missing_steps) >= 6L &&
+      is.null(sys_status$loaded_from)
+    if (nothing_yet) {
       return(NULL)
     }
     
-    missing_steps <- get_missing_setup_steps()
+    # Shown only when the session came from a saved file.
+    restored_line <- if (is.null(sys_status$loaded_from)) {
+      ""
+    } else {
+      paste0("\u2705 Settings file restored.\n", sys_status$loaded_from, "\n\n")
+    }
     
     # ------------------------------------------------------------
     # Incomplete setup
@@ -2260,9 +2535,7 @@ server <- function(input, output, session) {
       border_color <- "#ffc107"
       
       status_text <- paste0(
-        "✅ Settings file restored.\n",
-        sys_status$loaded_from,
-        "\n\n",
+        restored_line,
         "🚧 Setup is incomplete.\n",
         "Missing:\n - ",
         paste(
@@ -2279,9 +2552,7 @@ server <- function(input, output, session) {
       border_color <- "#dc3545"
       
       status_text <- paste0(
-        "✅ Settings file restored.\n",
-        sys_status$loaded_from,
-        "\n\n",
+        restored_line,
         "🛑 The most recent parallel performance check ",
         "produced a red result.\n",
         "Reduce the parallel load and run the check again."
@@ -2295,9 +2566,7 @@ server <- function(input, output, session) {
       border_color <- "#28a745"
       
       status_text <- paste0(
-        "✅ Settings file restored.\n",
-        sys_status$loaded_from,
-        "\n\n",
+        restored_line,
         "✅ Setup is complete and ready for a full run."
       )
     }
@@ -3256,14 +3525,28 @@ server <- function(input, output, session) {
     
     # 1. CSV ( tryCatch)
     df <- NULL
-    # , file check
+    
     if (!is.null(input$size_csv)) {
-      tryCatch({
-        df <- as.data.frame(readr::read_csv(input$size_csv$datapath, show_col_types = FALSE))
-      }, error = function(e) {
-        sys_status$log_1_3 <- paste0("❌ Error reading CSV: ", e$message)
-        return()
-      })
+      
+      df <- tryCatch(
+        as.data.frame(
+          readr::read_csv(
+            input$size_csv$datapath,
+            show_col_types = FALSE
+          )
+        ),
+        error = function(e) {
+          sys_status$log_1_3 <- paste0(
+            "❌ Error reading CSV: ",
+            conditionMessage(e)
+          )
+          NULL
+        }
+      )
+      
+    } else if (!is.null(vals$loaded_size_csv)) {
+      
+      df <- as.data.frame(vals$loaded_size_csv)
     }
     
     # 2. Validation
@@ -3286,7 +3569,7 @@ server <- function(input, output, session) {
       
       sys_status$design_ok <- TRUE
       design_csv_data(df) # CSV
-      
+      vals$loaded_size_csv <- df
       showNotification("Design Verified! Jumping to Preview...", type = "message", duration = 2)
       
       # Step 1: Design preview"
@@ -3450,15 +3733,44 @@ server <- function(input, output, session) {
   
   
   get_size_limits <- reactive({
-    req(input$size_csv)
-    df <- tryCatch(readr::read_csv(input$size_csv$datapath, show_col_types = FALSE), error = function(e) NULL)
-    if (is.null(df)) return(NULL)
+    
+    df <- NULL
+    
+    if (!is.null(input$size_csv)) {
+      df <- tryCatch(
+        as.data.frame(
+          readr::read_csv(
+            input$size_csv$datapath,
+            show_col_types = FALSE
+          )
+        ),
+        error = function(e) NULL
+      )
+    }
+    
+    if (is.null(df) && !is.null(vals$loaded_size_csv)) {
+      df <- as.data.frame(vals$loaded_size_csv)
+    }
+    
+    if (is.null(df) || nrow(df) == 0L) {
+      return(NULL)
+    }
+    
     nm <- names(df)
     nm <- gsub("\u00A0", " ", nm, fixed = TRUE)
     nm <- tolower(trimws(nm))
     names(df) <- nm
-    req_cols <- c("scenario_name", "min_len_mm", "max_len_mm")
-    if (!all(req_cols %in% names(df))) return(NULL)
+    
+    req_cols <- c(
+      "scenario_name",
+      "min_len_mm",
+      "max_len_mm"
+    )
+    
+    if (!all(req_cols %in% names(df))) {
+      return(NULL)
+    }
+    
     df
   })
   
@@ -3774,22 +4086,58 @@ server <- function(input, output, session) {
   
   
   output$test_selectors <- renderUI({
-    scen <- try(get_scenarios_df(), silent=TRUE)
     
-    if (inherits(scen, "try-error") || is.null(scen)) return(helpText("Please setup parameters first."))
-    scen_labels <- sprintf("%s | RM:%g | ESD:%g | PAE:%g",
-                           scen$scenario_name,
-                           scen$release_mortality,
-                           scen$ESD,
-                           scen$prop_annual_encounters)
+    if (!isTRUE(sys_status$design_ok)) {
+      return(
+        tags$div(
+          class = "alert alert-warning",
+          "Complete and verify Experiment Design first."
+        )
+      )
+    }
     
+    scen <- tryCatch(
+      get_scenarios_df(),
+      error = function(e) NULL
+    )
     
-    scen_choices <- setNames(scen$scenario_id, scen_labels)
+    if (is.null(scen) || nrow(scen) == 0L) {
+      return(
+        tags$div(
+          class = "alert alert-warning",
+          icon("exclamation-triangle"),
+          " No test scenarios are available. Re-submit Experiment Design ",
+          "or reload a settings file containing the Size limit CSV."
+        )
+      )
+    }
     
-    tagList(
-      selectInput("test_scen_id", "Choose Scenario (Runs all policies list on Design Preview):", choices = scen_choices)
+    scen_labels <- sprintf(
+      "%s | RM:%g | ESD:%g | PAE:%g",
+      scen$scenario_name,
+      scen$release_mortality,
+      scen$ESD,
+      scen$prop_annual_encounters
+    )
+    
+    scen_choices <- stats::setNames(
+      as.character(scen$scenario_id),
+      scen_labels
+    )
+    
+    selectInput(
+      "test_scen_id",
+      "Choose Scenario (runs all policies listed in Design Preview):",
+      choices  = scen_choices,
+      selected = as.character(scen$scenario_id[[1L]])
     )
   })
+  
+  # The scenario selector lives on the Test 1 tab, but Test 2 reads the value
+  # it produces. Shiny suspends outputs on tabs that have not been shown, so
+  # without this a user who opens Test 2 first would find no scenario selected
+  # and be told, wrongly, that none is available.
+  outputOptions(output, "test_selectors", suspendWhenHidden = FALSE)
   
   sys_status$log_2a <- "Waiting for run..."
   output$log_step2a <- renderText({ sys_status$log_2a })
@@ -3801,6 +4149,50 @@ server <- function(input, output, session) {
     test_sim_data(NULL)
     sys_status$test_run_done <- FALSE
     error_msgs <- character(0)
+    test_scen_id <- suppressWarnings(
+      as.integer(input$test_scen_id)
+    )
+    
+    if (
+      length(test_scen_id) != 1L ||
+      is.na(test_scen_id)
+    ) {
+      error_msgs <- c(
+        error_msgs,
+        paste0(
+          if (is.null(get_size_limits())) {
+            paste0(
+              "❌ The Size-limit CSV is not available. ",
+              "The settings file did not carry it, so upload it again under ",
+              "Step 1 Experiment Design and submit that page."
+            )
+          } else if (!isTRUE(sys_status$design_ok)) {
+            paste0(
+              "❌ Experiment Design has not been verified. ",
+              "Open Step 1 Experiment Design and submit it."
+            )
+          } else {
+            paste0(
+              "❌ No test scenario is selected yet. ",
+              "Open the scenario list above and choose one."
+            )
+          }
+        )
+      )
+    }
+    
+    if (
+      isTRUE(input$use_cloud) &&
+      !isTRUE(proc_state$cloud_verified)
+    ) {
+      error_msgs <- c(
+        error_msgs,
+        paste0(
+          "❌ Google Cloud has not been verified for the current settings. ",
+          "Return to Step 2 and click Check cloud connection."
+        )
+      )
+    }
     if (!sys_status$vbgf_ok) error_msgs <- c(error_msgs, "❌ VBGF growth estimation is not ready.")
     if (!sys_status$alk_ok) error_msgs <- c(error_msgs, "❌ ALK data are not ready.")
     if (!sys_status$global_ok) error_msgs <- c(error_msgs, "❌ Global parameters have not been verified.")
@@ -3812,15 +4204,43 @@ server <- function(input, output, session) {
       return()
     }
     
-    req(input$test_scen_id)
-    shinyjs::disable("run_test_sim")
-    on.exit(shinyjs::enable("run_test_sim"), add = TRUE)
+    # Hold the global lock for the whole observer; it is released however the
+    # run ends, including on error.
+    .set_active_run("validation", if (isTRUE(input$use_cloud)) "cloud" else "local")
+    # Release the lock unless a cloud job for this task really is being
+    # tracked when the observer exits. Checking the actual state rather than
+    # a flag means an error, an early return, or a refused submission can
+    # never leave the start buttons stuck.
+    on.exit({
+      still_tracking <- (
+        identical(proc_state$cloud_task_type, "validation") &&
+          !is.null(proc_state$cloud_job_id) &&
+          !is.null(proc_state$cloud_status) &&
+          proc_state$cloud_status %in% c("submitted", "running")
+      )
+      if (!still_tracking) .clear_active_run()
+    }, add = TRUE)
+    
+    # Clear the panel left by an earlier cloud job so this attempt does not
+    # begin by showing the previous outcome.
+    .cloud_reset_display()
     
     tryCatch({
       all_params <- get_packed_params()
       scen_df <- get_scenarios_df()
-      s_row <- scen_df[scen_df$scenario_id == as.integer(input$test_scen_id), ]
-      req(nrow(s_row) == 1)
+      
+      s_row <- scen_df[
+        scen_df$scenario_id == test_scen_id,
+        ,
+        drop = FALSE
+      ]
+      
+      if (nrow(s_row) != 1L) {
+        stop(
+          "The selected test scenario could not be found.",
+          call. = FALSE
+        )
+      }
       
       rm_vec_all <- parse_num_vec(input$rm_vec)
       if (length(rm_vec_all) == 0) rm_vec_all <- 0
@@ -3879,17 +4299,19 @@ server <- function(input, output, session) {
         )
         
         if (!isTRUE(sub$ok)) {
+          .clear_active_run()
           sys_status$log_2a <- paste0(
             "\U0001F6D1 The cloud job could not be started.\n",
             if (!is.null(sub$msg)) sub$msg else "")
         } else {
+          .cloud_start_watch(sub$job_id)
           sys_status$log_2a <- paste0(
             "\u2601\ufe0f Model validation submitted to Google Cloud.\n",
             "==========================================\n",
             "Job: ", sub$job_id, "\n",
             "Machine: ", input$gcp_machine_type, "\n",
-            "Progress appears in Step 3b. The first report arrives once the\n",
-            "machine has started, which usually takes a few minutes."
+            "Progress is shown on this Test 1 tab. Please wait while the cloud\n",
+            "machine starts; the first report may take a few minutes to appear."
           )
         }
         return()
@@ -3938,7 +4360,9 @@ server <- function(input, output, session) {
         "------------------------------------------\n",
         "Full-run tasks: ", total_tasks, "\n",
         "Active R workers: ", outer_workers, "\n",
-        "Estimated total: ~", round(est_seconds / 60, 2), " min\n",
+        "Rough full-model calculation-time estimate: ",
+        .format_test_duration(est_seconds),
+        "\n",
         budget_warning,
         "==========================================\n",
         "Plot updated."
@@ -3950,10 +4374,655 @@ server <- function(input, output, session) {
   
   
   # ===== Oversubscription & Memory Stress Test =====
-  output$log_oversub <- renderText({ sys_status$log_oversub })
+  # The observer already writes the cloud submission notice into
+  # sys_status$log_oversub, so this output has a single source of truth.
+  # Reading cloud state here as well would let a stale job hide any newer
+  # message, including the reason a fresh submission was refused.
+  output$log_oversub <- renderText({
+    sys_status$log_oversub
+  })
   
+  .perf_value <- function(x, default = NA) {
+    if (
+      is.null(x) ||
+      length(x) == 0L ||
+      is.na(x[[1L]])
+    ) {
+      default
+    } else {
+      x[[1L]]
+    }
+  }
+  
+  
+  .perf_seconds <- function(x) {
+    x <- suppressWarnings(
+      as.numeric(.perf_value(x, NA_real_))
+    )
+    
+    if (!is.finite(x)) {
+      return("n/a")
+    }
+    
+    if (x < 60) {
+      sprintf("%.1f sec", x)
+    } else if (x < 3600) {
+      sprintf("%.1f min", x / 60)
+    } else {
+      sprintf("%.2f hr", x / 3600)
+    }
+  }
+  
+  
+  .perf_gb <- function(x) {
+    x <- suppressWarnings(
+      as.numeric(.perf_value(x, NA_real_))
+    )
+    
+    if (!is.finite(x)) {
+      return("n/a")
+    }
+    
+    sprintf("%.2f GB", x / 1024)
+  }
+  
+  
+  .perf_integer <- function(x) {
+    x <- suppressWarnings(
+      as.integer(.perf_value(x, NA_integer_))
+    )
+    
+    if (is.na(x)) {
+      "n/a"
+    } else {
+      as.character(x)
+    }
+  }
+  
+  
+  .perf_total_tasks <- function() {
+    scenarios <- tryCatch(
+      get_scenarios_df(),
+      error = function(e) NULL
+    )
+    
+    n_scenarios <- if (is.null(scenarios)) {
+      1L
+    } else {
+      max(1L, nrow(scenarios))
+    }
+    
+    n_replicates <- suppressWarnings(
+      as.integer(input$n_iter)
+    )
+    
+    if (is.na(n_replicates) || n_replicates < 1L) {
+      n_replicates <- 1L
+    }
+    
+    max(
+      1L,
+      n_scenarios * n_replicates
+    )
+  }
+  
+  
+  .format_perf_report <- function(
+    res,
+    cloud = FALSE,
+    prog = NULL
+  ) {
+    status <- as.character(
+      .perf_value(res$status, "")
+    )
+    
+    memory_class <- as.character(
+      .perf_value(res$memory_precheck, "")
+    )
+    
+    total_tasks <- suppressWarnings(
+      as.integer(
+        .perf_value(
+          res$total_tasks,
+          .perf_total_tasks()
+        )
+      )
+    )
+    
+    requested_workers <- suppressWarnings(
+      as.integer(
+        .perf_value(
+          res$requested_workers,
+          input$n_cores
+        )
+      )
+    )
+    
+    effective_workers <- suppressWarnings(
+      as.integer(
+        .perf_value(
+          res$effective_workers,
+          requested_workers
+        )
+      )
+    )
+    
+    probe_workers <- suppressWarnings(
+      as.integer(
+        .perf_value(
+          res$probe_workers,
+          .perf_value(res$n_cores, 1L)
+        )
+      )
+    )
+    
+    if (is.na(total_tasks) || total_tasks < 1L) {
+      total_tasks <- 1L
+    }
+    
+    if (is.na(requested_workers) || requested_workers < 1L) {
+      requested_workers <- 1L
+    }
+    
+    if (is.na(effective_workers) || effective_workers < 1L) {
+      effective_workers <- 1L
+    }
+    
+    if (is.na(probe_workers) || probe_workers < 1L) {
+      probe_workers <- 1L
+    }
+    
+    solo_seconds <- suppressWarnings(
+      as.numeric(
+        .perf_value(res$solo_elapsed, NA_real_)
+      )
+    )
+    
+    concurrent_seconds <- suppressWarnings(
+      as.numeric(
+        .perf_value(res$concurrent_elapsed, NA_real_)
+      )
+    )
+    
+    slowdown <- suppressWarnings(
+      as.numeric(
+        .perf_value(res$oversub_factor, NA_real_)
+      )
+    )
+    
+    # The concurrent benchmark completes probe_workers model runs in one
+    # elapsed interval. Compare that interval with the time needed to run the
+    # same number of jobs one by one. The old "Parallel slowdown" value only
+    # described how much slower each worker became while sharing the CPU; it
+    # was not the overall benefit of parallel execution.
+    sequential_seconds <- if (
+      is.finite(solo_seconds) &&
+      solo_seconds > 0 &&
+      probe_workers > 0L
+    ) {
+      solo_seconds * probe_workers
+    } else {
+      NA_real_
+    }
+    
+    parallel_speedup <- if (
+      is.finite(sequential_seconds) &&
+      is.finite(concurrent_seconds) &&
+      concurrent_seconds > 0
+    ) {
+      sequential_seconds / concurrent_seconds
+    } else {
+      NA_real_
+    }
+    
+    parallel_efficiency <- if (
+      is.finite(parallel_speedup) &&
+      probe_workers > 0L
+    ) {
+      100 * parallel_speedup / probe_workers
+    } else {
+      NA_real_
+    }
+    
+    per_worker_memory <- .perf_value(
+      res$per_worker_mb,
+      .perf_value(res$solo_proc_mem, NA_real_)
+    )
+    
+    full_plan_memory <- .perf_value(
+      res$projected_full_mem,
+      .perf_value(res$projected_mem, NA_real_)
+    )
+    
+    # Test 2 estimates full-run time from the throughput actually measured:
+    # number of required worker groups × time required by one tested group.
+    estimated_full_seconds <- if (
+      is.finite(concurrent_seconds) &&
+      concurrent_seconds > 0 &&
+      probe_workers > 0L
+    ) {
+      ceiling(total_tasks / probe_workers) *
+        concurrent_seconds
+    } else {
+      NA_real_
+    }
+    
+    tested_full_load <- (
+      probe_workers >= effective_workers
+    )
+    
+    estimate_label <- if (tested_full_load) {
+      "More precise full-model calculation-time estimate"
+    } else {
+      "Updated full-model calculation-time estimate"
+    }
+    
+    cloud_timing <- if (isTRUE(cloud)) {
+      paste0(
+        "Cloud preparation and input download time: ",
+        .perf_seconds(prog$startup_sec),
+        "\n",
+        
+        "Time spent running the performance check time: ",
+        .perf_seconds(prog$compute_sec),
+        "\n",
+        
+        "------------------------------------------\n"
+      )
+    } else {
+      ""
+    }
+    
+    machine_statement <- if (isTRUE(cloud)) {
+      paste0(
+        "These results were measured on the selected Google Cloud machine, ",
+        "not on the computer used to open this app."
+      )
+    } else {
+      "These results were measured on this computer."
+    }
+    
+    # --------------------------------------------------------------------------
+    # Worker or memory failure
+    # --------------------------------------------------------------------------
+    
+    if (identical(status, "memory_crash")) {
+      return(
+        paste0(
+          "🛑 Test 2: Memory Failure\n",
+          "==========================================\n",
+          cloud_timing,
+          "The machine ran out of memory while the performance check was running.\n",
+          "The full simulation remains blocked.\n",
+          "------------------------------------------\n",
+          "Return to Step 2 and reduce Parallel cores, Policy threads, ",
+          "or Individual threads; then run the required safety check again.\n",
+          "==========================================\n",
+          machine_statement,
+          "\nFor technical details, please see the Help Guide."
+        )
+      )
+    }
+    
+    
+    if (identical(status, "worker_error")) {
+      return(
+        paste0(
+          "❌ Test 2: A Model Worker Failed\n",
+          "==========================================\n",
+          cloud_timing,
+          "The performance check did not produce a valid result.\n",
+          "The full simulation remains blocked.\n",
+          "------------------------------------------\n",
+          "Worker message: ",
+          .perf_value(res$worker_error, "No error message was returned."),
+          "\n",
+          "==========================================\n",
+          machine_statement,
+          "\nFor technical details, please see the Help Guide."
+        )
+      )
+    }
+    
+    
+    if (
+      identical(status, "memory_abort") ||
+      identical(memory_class, "abort")
+    ) {
+      max_safe_workers <- suppressWarnings(
+        as.integer(
+          .perf_value(
+            res$max_safe_workers_by_total,
+            NA_integer_
+          )
+        )
+      )
+      
+      action_text <- if (
+        !is.na(max_safe_workers) &&
+        max_safe_workers >= 1L
+      ) {
+        paste0(
+          "Return to Step 2 and set Parallel cores to ",
+          max_safe_workers,
+          " or fewer; then confirm Run Control and repeat Test 2."
+        )
+      } else {
+        paste0(
+          "Return to Step 2 and reduce Parallel cores, Policy threads, ",
+          "Individual threads, or the model population size; then repeat Test 2."
+        )
+      }
+      
+      return(
+        paste0(
+          "🛑 Test 2: Full Simulation Blocked\n",
+          "==========================================\n",
+          cloud_timing,
+          
+          "Memory needed by one active worker: ",
+          .perf_gb(per_worker_memory),
+          "\n",
+          
+          "Estimated memory needed by the selected parallel plan: ",
+          .perf_gb(full_plan_memory),
+          "\n",
+          
+          "Memory currently available: ",
+          .perf_gb(res$available_ram_mb),
+          "\n",
+          
+          "Total physical memory: ",
+          .perf_gb(res$system_ram_mb),
+          "\n",
+          
+          "Safety limit (95% of total memory): ",
+          .perf_gb(res$ram_limit),
+          "\n",
+          
+          "------------------------------------------\n",
+          "🛑 The selected parallel plan is not memory-safe.\n",
+          action_text,
+          "\n",
+          
+          "==========================================\n",
+          machine_statement,
+          "\nFor technical details, please see the Help Guide."
+        )
+      )
+    }
+    
+    
+    if (
+      !memory_class %in% c("safe", "warning")
+    ) {
+      return(
+        paste0(
+          "⚠️ Test 2: Memory Result Unavailable\n",
+          "==========================================\n",
+          cloud_timing,
+          "The app could not determine whether the full simulation would fit ",
+          "in memory. The full simulation remains blocked.\n",
+          "Install or verify the 'ps' package, then repeat Test 2.\n",
+          "==========================================\n",
+          machine_statement,
+          "\nFor technical details, please see the Help Guide."
+        )
+      )
+    }
+    
+    # --------------------------------------------------------------------------
+    # Successful speed result
+    # --------------------------------------------------------------------------
+    
+    cpu_result <- if (!is.finite(parallel_efficiency)) {
+      paste0(
+        "ℹ️ Parallel speed could not be compared because one of the ",
+        "timing measurements was unavailable."
+      )
+    } else if (parallel_efficiency >= 80) {
+      paste0(
+        "✅ Speed result: the selected workers provide efficient parallel acceleration."
+      )
+    } else if (parallel_efficiency >= 60) {
+      paste0(
+        "⚠️ Speed result: parallel execution is faster overall, but the workers ",
+        "compete noticeably for CPU capacity."
+      )
+    } else {
+      paste0(
+        "⚠️ Speed result: the selected workers have low parallel efficiency. ",
+        "Reducing one of the parallel settings may complete the full model faster."
+      )
+    }
+    
+    memory_result <- if (identical(memory_class, "safe")) {
+      paste0(
+        "✅ Memory result: the selected full parallel plan is expected to fit ",
+        "within the memory currently available."
+      )
+    } else {
+      paste0(
+        "⚠️ Memory result: the plan remains below the safety limit, but it ",
+        "exceeds the memory currently available. Close other programs before ",
+        "starting the full simulation."
+      )
+    }
+    
+    slowdown_text <- if (is.finite(slowdown)) {
+      sprintf("%.2fx", slowdown)
+    } else {
+      "n/a"
+    }
+    
+    speedup_text <- if (is.finite(parallel_speedup)) {
+      sprintf("%.2fx", parallel_speedup)
+    } else {
+      "n/a"
+    }
+    
+    efficiency_text <- if (is.finite(parallel_efficiency)) {
+      sprintf("%.1f%%", parallel_efficiency)
+    } else {
+      "n/a"
+    }
+    
+    paste0(
+      "✅ Test 2: Parallel Performance Check Complete\n",
+      "==========================================\n",
+      cloud_timing,
+      
+      "Full-model jobs: ",
+      total_tasks,
+      "\n",
+      
+      "Replicate workers selected in Step 2: ",
+      requested_workers,
+      "\n",
+      
+      "Replicate workers used in this check: ",
+      probe_workers,
+      "\n",
+      
+      "Policy threads per worker: ",
+      .perf_integer(res$combo_threads),
+      "\n",
+      
+      "Individual threads per worker: ",
+      .perf_integer(res$omp_threads),
+      "\n",
+      
+      "Logical CPU capacity: ",
+      .perf_integer(res$logical_cores),
+      "\n",
+      
+      "------------------------------------------\n",
+      "SPEED\n",
+      
+      "One worker completed one model run in: ",
+      .perf_seconds(solo_seconds),
+      "\n",
+      
+      "Estimated one-by-one time for ",
+      probe_workers,
+      " model runs: ",
+      .perf_seconds(sequential_seconds),
+      "\n",
+      
+      probe_workers,
+      " workers completed the same ",
+      probe_workers,
+      " model runs together in: ",
+      .perf_seconds(concurrent_seconds),
+      "\n",
+      
+      "Overall parallel speedup: ",
+      speedup_text,
+      "\n",
+      
+      "Parallel efficiency: ",
+      efficiency_text,
+      "\n",
+      
+      "Per-worker slowdown while sharing CPU: ",
+      slowdown_text,
+      "\n",
+      
+      cpu_result,
+      "\n",
+      
+      estimate_label,
+      ": ",
+      .perf_seconds(estimated_full_seconds),
+      "\n",
+      
+      "------------------------------------------\n",
+      "MEMORY SAFETY\n",
+      
+      "Estimated memory needed by one active worker: ",
+      .perf_gb(per_worker_memory),
+      "\n",
+      
+      "Estimated peak for the complete ",
+      effective_workers,
+      "-worker plan: ",
+      .perf_gb(full_plan_memory),
+      "\n",
+      
+      "Memory currently available: ",
+      .perf_gb(res$available_ram_mb),
+      "\n",
+      
+      "Total physical memory: ",
+      .perf_gb(res$system_ram_mb),
+      "\n",
+      
+      "Safety limit (95% of total memory): ",
+      .perf_gb(res$ram_limit),
+      "\n",
+      
+      memory_result,
+      "\n",
+      
+      "------------------------------------------\n",
+      "✅ The memory-safety requirement for Step 3b has been completed.\n",
+      "==========================================\n",
+      machine_statement,
+      "\nFor technical details, please see the Help Guide."
+    )
+  }
+  
+  
+  .apply_perf_result <- function(
+    res,
+    cloud = FALSE,
+    prog = NULL
+  ) {
+    status <- as.character(
+      .perf_value(res$status, "")
+    )
+    
+    memory_class <- as.character(
+      .perf_value(res$memory_precheck, "")
+    )
+    
+    if (
+      status %in% c("memory_abort", "memory_crash") ||
+      identical(memory_class, "abort")
+    ) {
+      sys_status$mem_safe <- FALSE
+      sys_status$memory_check_done <- TRUE
+      sys_status$memory_retest_required <- TRUE
+      
+    } else if (
+      identical(status, "worker_error") ||
+      !memory_class %in% c("safe", "warning")
+    ) {
+      sys_status$mem_safe <- NA
+      sys_status$memory_check_done <- FALSE
+      sys_status$memory_retest_required <- TRUE
+      
+    } else {
+      sys_status$mem_safe <- TRUE
+      sys_status$memory_check_done <- TRUE
+      sys_status$memory_retest_required <- FALSE
+    }
+    
+    sys_status$log_oversub <- .format_perf_report(
+      res = res,
+      cloud = cloud,
+      prog = prog
+    )
+    
+    invisible(TRUE)
+  }
   observeEvent(input$run_oversub_test, {
+    
     error_msgs <- character(0)
+    test_scen_id <- suppressWarnings(
+      as.integer(input$test_scen_id)
+    )
+    
+    if (
+      length(test_scen_id) != 1L ||
+      is.na(test_scen_id)
+    ) {
+      error_msgs <- c(
+        error_msgs,
+        paste0(
+          if (is.null(get_size_limits())) {
+            paste0(
+              "❌ The Size-limit CSV is not available. ",
+              "The settings file did not carry it, so upload it again under ",
+              "Step 1 Experiment Design and submit that page."
+            )
+          } else if (!isTRUE(sys_status$design_ok)) {
+            paste0(
+              "❌ Experiment Design has not been verified. ",
+              "Open Step 1 Experiment Design and submit it."
+            )
+          } else {
+            paste0(
+              "❌ No test scenario is selected yet. ",
+              "Open the scenario list above and choose one."
+            )
+          }
+        )
+      )
+    }
+    
+    if (
+      isTRUE(input$use_cloud) &&
+      !isTRUE(proc_state$cloud_verified)
+    ) {
+      error_msgs <- c(
+        error_msgs,
+        paste0(
+          "❌ Google Cloud has not been verified for the current settings. ",
+          "Return to Step 2 and click Check cloud connection."
+        )
+      )
+    }
     if (!sys_status$vbgf_ok) error_msgs <- c(error_msgs, "❌ VBGF growth estimation is not ready.")
     if (!sys_status$alk_ok) error_msgs <- c(error_msgs, "❌ ALK data are not ready.")
     if (!sys_status$global_ok) error_msgs <- c(error_msgs, "❌ Global parameters have not been verified.")
@@ -3970,18 +5039,43 @@ server <- function(input, output, session) {
       return()
     }
     
-    req(input$test_scen_id)
-    shinyjs::disable("run_oversub_test")
-    on.exit(shinyjs::enable("run_oversub_test"), add = TRUE)
+    
+    .set_active_run("perfcheck", if (isTRUE(input$use_cloud)) "cloud" else "local")
+    # Release the lock unless a cloud job for this task really is being
+    # tracked when the observer exits. Checking the actual state rather than
+    # a flag means an error, an early return, or a refused submission can
+    # never leave the start buttons stuck.
+    on.exit({
+      still_tracking <- (
+        identical(proc_state$cloud_task_type, "perfcheck") &&
+          !is.null(proc_state$cloud_job_id) &&
+          !is.null(proc_state$cloud_status) &&
+          proc_state$cloud_status %in% c("submitted", "running")
+      )
+      if (!still_tracking) .clear_active_run()
+    }, add = TRUE)
     sys_status$memory_check_done <- FALSE
     sys_status$mem_safe <- NA
     sys_status$memory_retest_required <- TRUE
     
+    # Clear the panel left by an earlier cloud job.
+    .cloud_reset_display()
+    
     tryCatch({
       all_params <- get_packed_params()
       scen_df <- get_scenarios_df()
-      s_row <- scen_df[scen_df$scenario_id == as.integer(input$test_scen_id), ]
-      req(nrow(s_row) == 1L)
+      s_row <- scen_df[
+        scen_df$scenario_id == test_scen_id,
+        ,
+        drop = FALSE
+      ]
+      
+      if (nrow(s_row) != 1L) {
+        stop(
+          "The selected test scenario could not be found.",
+          call. = FALSE
+        )
+      }
       
       rm_vec_all <- parse_num_vec(input$rm_vec)
       if (length(rm_vec_all) == 0L) rm_vec_all <- 0
@@ -4080,7 +5174,7 @@ server <- function(input, output, session) {
       # The full-load option requests the real full-run replicate concurrency.
       # Memory pre-checks in helper.R will still run before concurrent workers
       # are launched.
-      if (isTRUE(input$stress_use_all_workers)) {
+      if (identical(input$perf_test_mode, "full")) {
         probe_workers <- effective_workers
       }
       
@@ -4220,7 +5314,7 @@ server <- function(input, output, session) {
         },
         
         if (
-          isTRUE(input$stress_use_all_workers) &&
+          identical(input$perf_test_mode, "full") &&
           full_thread_budget > logical_cores
         ) {
           paste0(
@@ -4255,21 +5349,22 @@ server <- function(input, output, session) {
         )
         
         if (!isTRUE(sub$ok)) {
+          .clear_active_run()
           sys_status$log_oversub <- paste0(
             "\U0001F6D1 The cloud job could not be started.\n",
             if (!is.null(sub$msg)) sub$msg else "")
         } else {
+          .cloud_start_watch(sub$job_id)
           sys_status$log_oversub <- paste0(
-            "\u2601\ufe0f Parallel performance check submitted to Google Cloud.\n",
+            "\u2601\ufe0f Test 2 was submitted to Google Cloud.\n",
             "==========================================\n",
             "Job: ", sub$job_id, "\n",
             "Machine: ", input$gcp_machine_type, "\n",
-            "Replicate workers requested: ", requested_workers, "\n",
-            "Probe workers: ", probe_workers, "\n",
+            "Replicate workers selected in Step 2: ", requested_workers, "\n",
+            "Replicate workers used in this check: ", probe_workers, "\n",
             "------------------------------------------\n",
-            "Speed and memory will be measured on the rented machine, which is\n",
-            "the only place those figures mean anything for a cloud run.\n",
-            "Progress appears in Step 3b."
+            "Please wait while the cloud machine starts. The speed and memory report ",
+            "will appear on this Test 2 tab when the check finishes."
           )
         }
         return()
@@ -4288,233 +5383,10 @@ server <- function(input, output, session) {
           mem_abort_frac    = 0.95
         )
       })
-      
-      gb <- function(mb) {
-        if (is.null(mb) || length(mb) == 0L || is.na(mb)) {
-          "n/a"
-        } else {
-          sprintf("%.2f GB", as.numeric(mb) / 1024)
-        }
-      }
-      
-      value_or <- function(x, default = NA) {
-        if (is.null(x) || length(x) == 0L || is.na(x[[1L]])) {
-          default
-        } else {
-          x[[1L]]
-        }
-      }
-      
-      if (identical(res$status, "memory_abort")) {
-        sys_status$mem_safe <- FALSE
-        sys_status$memory_check_done <- TRUE
-        sys_status$memory_retest_required <- TRUE
-        
-        max_safe <- value_or(res$max_safe_workers_by_total, NA)
-        if (isTRUE(value_or(res$single_worker_too_large, FALSE))) {
-          action_text <- paste0(
-            "A single active model already reaches the hard memory limit.\n",
-            "Reduce policy threads, individual threads, population size, or other ",
-            "single-model memory demands, then confirm Run Control and check again."
-          )
-        } else if (!is.na(max_safe) && max_safe >= 1L) {
-          action_text <- paste0(
-            "Lower Parallel cores (Step 2) to ", max_safe, " or fewer, ",
-            "then confirm Run Control and run this check again."
-          )
-        } else {
-          action_text <- paste0(
-            "Reduce replicate workers and/or internal policy or individual threads, ",
-            "then confirm Run Control and check again."
-          )
-        }
-        
-        sys_status$log_oversub <- paste0(
-          "🛑 HARD MEMORY LIMIT — FULL RUN BLOCKED\n",
-          "==========================================\n",
-          "Estimated memory per active worker: ", gb(res$per_worker_mb), "\n",
-          "Projected peak for ", value_or(res$effective_workers, "n/a"), " workers: ",
-          gb(value_or(res$projected_mem, res$solo_proc_mem)), "\n",
-          "Sampled benchmark footprint: ", gb(res$concurrent_peak_mem), "\n",
-          "Available RAM now: ", gb(res$available_ram_mb), "\n",
-          "Total physical RAM: ", gb(res$system_ram_mb), "\n",
-          "Hard limit (95% of total): ", gb(res$ram_limit), "\n",
-          "------------------------------------------\n",
-          action_text
-        )
-        
-      } else if (identical(res$status, "memory_crash")) {
-        sys_status$mem_safe <- FALSE
-        sys_status$memory_check_done <- TRUE
-        sys_status$memory_retest_required <- TRUE
-        
-        sys_status$log_oversub <- paste0(
-          "🛑 MEMORY CRASH DETECTED DURING THE CHECK\n",
-          "==========================================\n",
-          "Worker message: ", res$worker_error, "\n",
-          "The full simulation is blocked. Lower Parallel cores, or reduce policy ",
-          "or individual threads; then confirm Run Control and check again."
-        )
-        
-      } else if (identical(res$status, "worker_error")) {
-        sys_status$mem_safe <- NA
-        sys_status$memory_check_done <- FALSE
-        sys_status$memory_retest_required <- TRUE
-        sys_status$log_oversub <- paste0(
-          "❌ A worker failed during the benchmark:\n",
-          res$worker_error,
-          "\n\nA successful benchmark is required before the full run."
-        )
-        
-      } else if (identical(res$memory_precheck, "unknown")) {
-        
-        sys_status$mem_safe <- NA
-        sys_status$memory_check_done <- FALSE
-        sys_status$memory_retest_required <- TRUE
-        
-        sys_status$log_oversub <- paste0(
-          "⚠️ Memory demand could not be classified.\n",
-          "A valid memory measurement is required before the full simulation.\n",
-          "Check that the 'ps' package is installed, then run the check again."
-        )
-        
-      }  else {
-        sys_status$mem_safe <- TRUE
-        sys_status$memory_check_done <- TRUE
-        sys_status$memory_retest_required <- FALSE
-        
-        osf <- res$oversub_factor
-        # Values needed by both the memory verdict and the final report.
-        probe_workers_used <- value_or(
-          res$probe_workers,
-          value_or(res$n_cores, 1L)
-        )
-        
-        effective_workers <- value_or(
-          res$effective_workers,
-          value_or(res$requested_workers, 1L)
-        )
-        
-        # Memory measured during the limited concurrent benchmark.
-        measured_probe_mem <- value_or(
-          res$concurrent_peak_mem,
-          value_or(res$projected_probe_mem, NA_real_)
-        )
-        
-        # Estimated memory demand of the user's actual selected execution plan.
-        # The latest helper returns projected_full_mem; projected_mem remains
-        # the backward-compatible alias.
-        current_plan_mem <- value_or(
-          res$projected_full_mem,
-          value_or(res$projected_mem, NA_real_)
-        )
-        
-        
-        osf_line <- if (is.na(osf)) "n/a" else sprintf("%.2fx", osf)
-        cpu_verdict <- if (is.na(osf)) {
-          "Could not measure CPU contention because timing was unavailable."
-        } else if (osf <= 1.25) {
-          "✅ CPU result: healthy — concurrent workers barely slow each other down."
-        } else if (osf <= 1.75) {
-          "⚠️ CPU result: mild oversubscription — some slowdown from shared cores."
-        } else {
-          "🛑 CPU result: heavy oversubscription — lower at least one parallel layer."
-        }
-        
-        memory_verdict <- if (
-          is.na(current_plan_mem) ||
-          is.na(res$available_ram_mb) ||
-          is.na(res$system_ram_mb) ||
-          is.na(res$ram_limit)
-        ) {
-          
-          paste0(
-            "ℹ️ Memory result: the current plan could not be classified ",
-            "because one or more memory measurements were unavailable."
-          )
-          
-        } else if (current_plan_mem < res$available_ram_mb) {
-          
-          paste0(
-            "✅ Memory result: the estimated memory for your current plan fits ",
-            "within the RAM available right now."
-          )
-          
-        } else if (current_plan_mem < res$ram_limit) {
-          
-          paste0(
-            "⚠️ Memory result: the estimated memory for your current plan is ",
-            "higher than the RAM available right now, but remains below 95% ",
-            "of total physical RAM. The plan is allowed. Close other programs ",
-            "before the full run to free more memory."
-          )
-          
-        } else {
-          
-          paste0(
-            "🛑 Memory result: the estimated memory for your current plan reaches ",
-            "or exceeds 95% of total physical RAM. Lower Parallel cores (Step 2), ",
-            "then run this check again."
-          )
-        }
-        
-        
-        
-        probe_note <- if (probe_workers_used < effective_workers) {
-          paste0(
-            "This test used ", probe_workers_used,
-            " workers to estimate the memory demand of your full ",
-            effective_workers, "-worker plan.\n",
-            "Select the full-load option only when you want to test all workers ",
-            "at the same time.\n"
-          )
-        } else {
-          paste0(
-            "This benchmark tested all ",
-            effective_workers,
-            " active workers in your current plan.\n"
-          )
-        }
-        
-        sys_status$log_oversub <- paste0(
-          "✅ Parallel performance check complete\n",
-          "==========================================\n",
-          "Total jobs: ", value_or(res$total_tasks, total_tasks), "\n",
-          "Requested replicate workers: ", value_or(res$requested_workers, requested_workers), "\n",
-          "Configured usable workers: ", value_or(res$configured_workers, requested_workers), "\n",
-          "Active workers: ", effective_workers, "\n",
-          "Benchmark workers used: ", probe_workers_used, "\n",
-          "Policy threads: ", res$combo_threads,
-          " | Individual threads: ", res$omp_threads, "\n",
-          "Logical CPU cores: ", res$logical_cores, "\n",
-          "------------------------------------------\n",
-          "Solo worker time: ", round(res$solo_elapsed, 3), " sec\n",
-          "Concurrent probe time: ", round(res$concurrent_elapsed, 3), " sec\n",
-          "Oversubscription factor: ", osf_line, "\n",
-          cpu_verdict, "\n",
-          "------------------------------------------\n",
-          "Estimated memory per active worker: ",
-          gb(res$per_worker_mb), "\n",
-          
-          "Memory used in this ",
-          probe_workers_used,
-          "-worker test: ",
-          gb(measured_probe_mem), "\n",
-          
-          "Estimated memory for your current plan (",
-          effective_workers,
-          " active workers): ",
-          gb(current_plan_mem), "\n",
-          "Available RAM now: ", gb(res$available_ram_mb), "\n",
-          "Total physical RAM: ", gb(res$system_ram_mb), "\n",
-          "Hard limit (95% of total): ", gb(res$ram_limit), "\n",
-          memory_verdict, "\n",
-          probe_note,
-          "==========================================\n",
-          if (!isTRUE(res$have_ps)) "Note: install the 'ps' package for memory measurements.\n" else ""
-        )
-      }
-      
+      .apply_perf_result(
+        res = res,
+        cloud = FALSE,
+        prog = NULL)
     }, error = function(e) {
       sys_status$mem_safe <- NA
       sys_status$memory_check_done <- FALSE
@@ -4773,6 +5645,7 @@ server <- function(input, output, session) {
     "transient_years", "stable_years", "policy_years",
     "lake_area_ha", "initial_pop_size", "month_weights",
     "ESD_vec", "pae_vec", "rm_vec", "comp_breaks", "comp_probs",
+    "compliance_mode",
     "n_iter", "seed", "n_cores",
     "simulation_engine", "omp_nthreads",
     "use_gpu", "gpu_thread_count", "fast_forward_mode",
@@ -4791,6 +5664,7 @@ server <- function(input, output, session) {
     radio    <- c("f_age_mode","fast_forward_mode","missing_age_mode")
     select   <- c("z_method")
     slider   <- c("n_cores","gpu_thread_count","omp_nthreads")
+    checkgrp <- c("compliance_mode")
     text     <- c("month_weights","ESD_vec","pae_vec","rm_vec","comp_breaks","comp_probs",
                   "gcp_project","gcp_region","gcp_bucket","gcp_machine_type",
                   "gcp_container_image")
@@ -4798,6 +5672,7 @@ server <- function(input, output, session) {
     if (id %in% radio)    return("radio")
     if (id %in% select)   return("select")
     if (id %in% slider)   return("slider")
+    if (id %in% checkgrp) return("checkgroup")
     if (id %in% text)     return("text")
     "numeric"
   }
@@ -4833,12 +5708,22 @@ server <- function(input, output, session) {
         alk_seed        = vals$alk_seed,
         vbgf_seed       = vals$vbgf_seed,
         z_seed          = vals$z_seed,
-        growth_fit_note = vals$growth_fit_note
+        growth_fit_note = vals$growth_fit_note,
+        # The automatic fast-forward duration is derived from the global
+        # parameters. Saving it means a restored session can show the same
+        # figure without asking the user to submit those parameters again.
+        T_safe_info     = vals$T_safe_info
       ),
       files = list(
         growth = if (!is.null(input$file_growth)) .read_csv_safe(input$file_growth$datapath) else NULL,
         alk    = if (!is.null(input$file_alk))    .read_csv_safe(input$file_alk$datapath)    else NULL,
-        size   = if (!is.null(input$size_csv))    .read_csv_safe(input$size_csv$datapath)    else NULL
+        size = if (!is.null(input$size_csv)) {
+          .read_csv_safe(input$size_csv$datapath)
+        } else if (!is.null(vals$loaded_size_csv)) {
+          as.data.frame(vals$loaded_size_csv)
+        } else {
+          NULL
+        }
       ),
       status = list(
         vbgf_ok     = sys_status$vbgf_ok,
@@ -4889,6 +5774,7 @@ server <- function(input, output, session) {
              checkbox = updateCheckboxInput(session, id, value = isTRUE(val)),
              radio    = updateRadioButtons(session, id, selected = val),
              slider   = updateSliderInput(session, id, value = val),
+             checkgroup = updateCheckboxGroupInput(session, id, selected = val),
              updateTextInput(session, id, value = as.character(val))
       )
     }
@@ -4906,15 +5792,23 @@ server <- function(input, output, session) {
       vals$vbgf_seed       <- r$vbgf_seed
       vals$z_seed          <- r$z_seed
       vals$growth_fit_note <- r$growth_fit_note
+      if (!is.null(r$T_safe_info)) vals$T_safe_info <- r$T_safe_info
     }
     
     f <- saved$files
+    missing_files <- character(0)
     if (!is.null(f)) {
       if (!is.null(f$alk) && is.null(vals$alk_data)) {
         vals$alk_data <- f$alk
         if (is.null(vals$alk_source)) vals$alk_source <- "file"
       }
       vals$loaded_size_csv <- f$size
+    }
+    # Settings files written by earlier versions may predate the storing of
+    # uploaded tables. Say so at load time rather than letting it surface much
+    # later as an unexplained missing scenario in Step 3a.
+    if (is.null(f) || is.null(f$size)) {
+      missing_files <- c(missing_files, "Size-limit CSV")
     }
     
     st <- saved$status
@@ -4943,24 +5837,126 @@ server <- function(input, output, session) {
              if (!is.null(meta$package_version)) paste0(" (craibm ", meta$package_version, ")") else "")
     } else "Loaded settings from file."
     
-    showNotification(
-      "Settings loaded. Please re-confirm Run Control and re-run the parallel performance check on this machine.",
-      type = "message", duration = 10
-    )
+    if (length(missing_files) > 0L) {
+      sys_status$loaded_from <- paste0(
+        sys_status$loaded_from,
+        "\n\u26a0\ufe0f This file did not include: ",
+        paste(missing_files, collapse = ", "),
+        ". Upload it again in Step 1 and submit that page."
+      )
+      showNotification(
+        paste0("Settings loaded, but the ", paste(missing_files, collapse = " and "),
+               " was not in the file. Upload it again in Step 1."),
+        type = "warning", duration = 15
+      )
+    } else {
+      showNotification(
+        "Settings loaded. Please re-confirm Run Control and re-run the parallel performance check on this machine.",
+        type = "message", duration = 10
+      )
+    }
   })
   
   # ---- Small helpers used by the cloud section -------------------------------
   `%||%` <- function(a, b) if (is.null(a)) b else a
   
+  
+  .format_test_duration <- function(seconds) {
+    if (
+      is.null(seconds) ||
+      length(seconds) == 0L ||
+      is.na(seconds[[1L]]) ||
+      !is.finite(as.numeric(seconds[[1L]]))
+    ) {
+      return("n/a")
+    }
+    
+    seconds <- as.numeric(seconds[[1L]])
+    
+    if (seconds < 60) {
+      sprintf("%.1f sec", seconds)
+    } else if (seconds < 3600) {
+      sprintf("%.1f min", seconds / 60)
+    } else {
+      sprintf("%.2f hr", seconds / 3600)
+    }
+  }
+  
+  
+  .estimate_full_run <- function(one_task_seconds) {
+    one_task_seconds <- suppressWarnings(
+      as.numeric(one_task_seconds[[1L]])
+    )
+    
+    if (!is.finite(one_task_seconds) || one_task_seconds <= 0) {
+      return(list(
+        total_tasks = NA_integer_,
+        workers = NA_integer_,
+        seconds = NA_real_,
+        formatted = "n/a"
+      ))
+    }
+    
+    scenarios <- get_scenarios_df()
+    n_scenarios <- nrow(scenarios)
+    
+    n_replicates <- suppressWarnings(
+      as.integer(input$n_iter)
+    )
+    
+    workers_requested <- suppressWarnings(
+      as.integer(input$n_cores)
+    )
+    
+    if (is.na(n_replicates) || n_replicates < 1L) {
+      n_replicates <- 1L
+    }
+    
+    total_tasks <- max(
+      1L,
+      n_scenarios * n_replicates
+    )
+    
+    workers <- min(
+      max(1L, workers_requested),
+      total_tasks
+    )
+    
+    waves <- ceiling(total_tasks / workers)
+    estimated_seconds <- waves * one_task_seconds
+    
+    list(
+      total_tasks = total_tasks,
+      workers = workers,
+      seconds = estimated_seconds,
+      formatted = .format_test_duration(estimated_seconds)
+    )
+  }
+  
   .cloud_timing_lines <- function(prog) {
-    fmt <- function(x) if (is.null(x) || is.na(x)) "n/a" else {
+    fmt <- function(x) {
+      if (is.null(x) || length(x) == 0L || is.na(x[[1L]])) return("n/a")
+      x <- as.numeric(x[[1L]])
       if (x < 90) sprintf("%.1f sec", x) else sprintf("%.1f min", x / 60)
     }
+    
+    inside_container <- if (
+      !is.null(prog$startup_sec) &&
+      !is.null(prog$compute_sec) &&
+      is.finite(as.numeric(prog$startup_sec)) &&
+      is.finite(as.numeric(prog$compute_sec))
+    ) {
+      as.numeric(prog$startup_sec) + as.numeric(prog$compute_sec)
+    } else {
+      NA_real_
+    }
+    
     paste0(
-      "Machine startup and setup: ", fmt(prog$startup_sec), "\n",
-      "Computation:               ", fmt(prog$compute_sec), "\n",
-      "The startup cost is paid once per cloud run; judge the machine's speed\n",
-      "by the computation time."
+      "Container setup and payload download: ", fmt(prog$startup_sec), "\n",
+      "Model computation:                    ", fmt(prog$compute_sec), "\n",
+      "Measured inside the container:        ", fmt(inside_container), "\n",
+      "Google Batch total runtime is longer because it also includes VM\n",
+      "provisioning, image pull, result upload, and shutdown."
     )
   }
   
@@ -4987,17 +5983,218 @@ server <- function(input, output, session) {
     )
   })
   
-  # Obtain a token, renewing it when the previous one is close to expiry.
-  cloud_token <- function() {
-    cs <- cloud_settings()
-    if (is.null(cs$key_path)) stop("Upload a service-account key first.")
-    if (is.null(proc_state$cloud_auth) ||
-        !identical(proc_state$cloud_auth$json_path, cs$key_path)) {
-      proc_state$cloud_auth <- cloud_auth(cs$key_path)
-    } else {
-      proc_state$cloud_auth <- cloud_refresh_auth(proc_state$cloud_auth)
+  # ---- Background cloud watcher --------------------------------------------
+  # All authentication refreshes and Cloud API requests happen in this separate
+  # R process. The main Shiny process never waits for a network request.
+  .cloud_status_file <- function(jid) {
+    file.path(tempdir(), paste0("craibm-watch-", jid, ".rds"))
+  }
+  
+  cloud_watch <- ExtendedTask$new(
+    function(key_path, bucket, project, region, jid, status_path,
+             max_hours = 48) {
+      future({
+        library(craibm)
+        
+        started   <- Sys.time()
+        auth      <- cloud_auth(key_path)
+        fails     <- 0L
+        max_fails <- 60L
+        
+        write_status <- function(...) {
+          try(saveRDS(list(...), status_path), silent = TRUE)
+        }
+        
+        write_status(
+          phase = "waiting",
+          detail = "Submitted, waiting for a machine.",
+          done = NA_integer_,
+          total = NA_integer_,
+          batch_state = NA_character_,
+          checked_at = Sys.time()
+        )
+        
+        repeat {
+          elapsed_min <- as.numeric(
+            difftime(Sys.time(), started, units = "mins")
+          )
+          
+          wait_s <- if (elapsed_min < 5) {
+            15
+          } else if (elapsed_min < 30) {
+            60
+          } else if (elapsed_min < 240) {
+            180
+          } else {
+            300
+          }
+          
+          Sys.sleep(wait_s)
+          
+          auth <- tryCatch(
+            cloud_refresh_auth(auth),
+            error = function(e) {
+              tryCatch(cloud_auth(key_path), error = function(e2) NULL)
+            }
+          )
+          
+          if (is.null(auth)) {
+            fails <- fails + 1L
+            if (fails >= max_fails) {
+              return(list(
+                outcome = "give_up",
+                reason = "Authentication kept failing."
+              ))
+            }
+            next
+          }
+          
+          prog <- tryCatch(
+            cloud_poll_progress(auth, bucket, jid),
+            error = function(e) NULL
+          )
+          
+          if (is.null(prog)) {
+            fails <- fails + 1L
+            write_status(
+              phase = "unreachable",
+              detail = paste0(
+                "Cannot reach Cloud Storage (attempt ",
+                fails,
+                "). The cloud job is unaffected."
+              ),
+              done = NA_integer_,
+              total = NA_integer_,
+              batch_state = NA_character_,
+              checked_at = Sys.time()
+            )
+            if (fails >= max_fails) {
+              return(list(
+                outcome = "give_up",
+                reason = "Progress could not be read for a long time."
+              ))
+            }
+            next
+          }
+          fails <- 0L
+          
+          if (isTRUE(prog$available) && identical(prog$status, "done")) {
+            write_status(
+              phase = "done",
+              detail = "Finished.",
+              done = prog$done,
+              total = prog$total,
+              batch_state = NA_character_,
+              checked_at = Sys.time()
+            )
+            return(list(outcome = "done", prog = prog))
+          }
+          
+          if (isTRUE(prog$available) && identical(prog$status, "failed")) {
+            write_status(
+              phase = "failed",
+              detail = "The cloud run failed.",
+              done = prog$done,
+              total = prog$total,
+              batch_state = NA_character_,
+              checked_at = Sys.time()
+            )
+            return(list(outcome = "failed", prog = prog))
+          }
+          
+          need_state <- !isTRUE(prog$available) || isTRUE(prog$stale)
+          state <- NA_character_
+          
+          if (need_state) {
+            st <- tryCatch(
+              cloud_job_state(auth, project, region, jid),
+              error = function(e) NULL
+            )
+            
+            if (!is.null(st) && isTRUE(st$ok) && !is.na(st$state)) {
+              state <- st$state
+              
+              if (state %in% c("CANCELLED", "DELETION_IN_PROGRESS")) {
+                return(list(outcome = "cancelled", state = state))
+              }
+              if (identical(state, "FAILED")) {
+                return(list(outcome = "batch_failed", state = state))
+              }
+              if (identical(state, "SUCCEEDED") &&
+                  !isTRUE(prog$available)) {
+                return(list(outcome = "no_report", state = state))
+              }
+            }
+          }
+          
+          if (isTRUE(prog$available)) {
+            write_status(
+              phase = "running",
+              detail = if (!is.na(prog$done) && !is.na(prog$total)) {
+                paste0(prog$done, " of ", prog$total, " runs finished.")
+              } else {
+                "Running on the cloud machine."
+              },
+              done = prog$done,
+              total = prog$total,
+              batch_state = state,
+              checked_at = Sys.time()
+            )
+          } else {
+            queued <- state %in% c("QUEUED", "SCHEDULED")
+            write_status(
+              phase = if (isTRUE(queued)) "queued" else "waiting",
+              detail = if (isTRUE(queued)) {
+                paste0(
+                  "Still QUEUED after ",
+                  round(elapsed_min),
+                  " minutes. Google holds a job when the requested machine ",
+                  "type is unavailable in this region, or a quota is exhausted. ",
+                  "No computation has started, so stopping now costs nothing."
+                )
+              } else {
+                "Waiting for the cloud machine to start."
+              },
+              done = NA_integer_,
+              total = NA_integer_,
+              batch_state = state,
+              checked_at = Sys.time()
+            )
+          }
+          
+          if (elapsed_min > max_hours * 60) {
+            return(list(
+              outcome = "gave_up_time",
+              reason = paste0(
+                "Still not finished after ",
+                max_hours,
+                " hours of watching."
+              )
+            ))
+          }
+        }
+      }, seed = TRUE)
     }
-    proc_state$cloud_auth
+  )
+  
+  # Obtain a token, renewing it when the previous one is close to expiry.
+  # The stored credentials are read under isolate(): this runs inside the
+  # polling observers, and a plain read would tie them to a value that is
+  # rewritten on every refresh.
+  cloud_token <- function() {
+    cs <- isolate(cloud_settings())
+    if (is.null(cs$key_path)) stop("Upload a service-account key first.")
+    
+    current <- isolate(proc_state$cloud_auth)
+    
+    if (is.null(current) || !identical(current$json_path, cs$key_path)) {
+      current <- cloud_auth(cs$key_path)
+    } else {
+      current <- cloud_refresh_auth(current)
+    }
+    
+    proc_state$cloud_auth <- current
+    current
   }
   
   # ---- Connection check ------------------------------------------------------
@@ -5042,16 +6239,22 @@ server <- function(input, output, session) {
   # Shared by all three cloud entry points: validates, uploads and starts.
   cloud_submit <- function(task_type, payload, label) {
     cs <- cloud_settings()
-
+    
     if (!is.null(proc_state$cloud_status) &&
         proc_state$cloud_status %in% c("submitted", "running")) {
-      return(list(
-        ok = FALSE,
-        msg = paste0(
-          "Another cloud job is still being watched in this session (",
-          proc_state$cloud_job_id, "). Finish or cancel it before starting a new one."
-        )
-      ))
+      busy_msg <- paste0(
+        "A cloud job from this session is still being tracked.\n",
+        "Job: ", proc_state$cloud_job_id, "\n",
+        "State: ", proc_state$cloud_status, "\n\n",
+        "Stop that job before starting another one. If it was already cancelled ",
+        "in the Google Cloud console, pressing Stop here clears the tracking and ",
+        "releases this page."
+      )
+      showNotification(
+        "A cloud job is still being tracked. Stop it before starting another.",
+        type = "warning", duration = 12
+      )
+      return(list(ok = FALSE, msg = busy_msg))
     }
     
     chk <- check_cloud_inputs(cs$key_path, cs$project, cs$region,
@@ -5066,8 +6269,17 @@ server <- function(input, output, session) {
     res <- tryCatch({
       auth <- cloud_token()
       cloud_upload_payload(auth, cs$bucket, job_id, payload)
-      cloud_submit_batch(auth, cs$project, cs$region, cs$bucket, job_id,
-                         cs$machine_type, task_type, image = cs$image)
+      cloud_submit_batch(
+        auth                   = auth,
+        project                = cs$project,
+        region                 = cs$region,
+        bucket                 = cs$bucket,
+        job_id                 = job_id,
+        machine_type           = cs$machine_type,
+        task_type              = task_type,
+        image                  = cs$image,
+        worker_service_account = auth$email
+      )
       list(ok = TRUE)
     }, error = function(e) list(ok = FALSE, msg = conditionMessage(e)))
     
@@ -5082,18 +6294,79 @@ server <- function(input, output, session) {
     proc_state$cloud_done       <- NA_integer_
     proc_state$cloud_total      <- NA_integer_
     proc_state$cloud_poll_fails <- 0L
-    proc_state$cloud_polling    <- FALSE
     proc_state$cloud_last_report <- NULL
     proc_state$cloud_no_progress <- 0L
+    proc_state$cloud_submitted_at <- Sys.time()
+    proc_state$cloud_queue_warned <- FALSE
+    if (identical(task_type, "perfcheck")) {
+      proc_state$cloud_perf_requested <- suppressWarnings(
+        as.integer(payload$requested_workers)
+      )
+      proc_state$cloud_perf_probe <- suppressWarnings(
+        as.integer(payload$probe_workers)
+      )
+    } else {
+      proc_state$cloud_perf_requested <- NA_integer_
+      proc_state$cloud_perf_probe <- NA_integer_
+    }
+    # Clear the previous run's report so a finished result is never shown
+    # alongside a job that has only just been submitted.
+    if (identical(task_type, "validation")) {
+      sys_status$log_2a <- NULL
+    } else if (identical(task_type, "perfcheck")) {
+      sys_status$log_oversub <- NULL
+    }
     proc_state$cloud_result_uri <- cloud_result_uri(cs$bucket, job_id)
-    
-    showNotification(paste0(label, " submitted to Google Cloud."),
-                     type = "message", duration = 8)
+    sys_status$cloud_summary <- NULL
+    showNotification(
+      paste0(
+        label,
+        " was submitted to Google Cloud. ",
+        "Please wait while the cloud machine starts."
+      ),
+      id = "cloud_job_notice",
+      type = "message",
+      duration = NULL
+    )
     list(ok = TRUE, job_id = job_id)
   }
   
+  .cloud_start_watch <- function(job_id) {
+    cs <- isolate(cloud_settings())
+    sp <- .cloud_status_file(job_id)
+    try(unlink(sp), silent = TRUE)
+    
+    proc_state$cloud_watch_job <- job_id
+    
+    shinyjs::runjs(sprintf("
+      window._craibmT0 = %s;
+      clearInterval(window._craibmClk);
+      window._craibmClk = setInterval(function () {
+        var el = document.getElementById('cloud_clock');
+        if (!el) return;
+        var s = Math.floor((Date.now() - window._craibmT0) / 1000);
+        var h = Math.floor(s / 3600), m = Math.floor((s %% 3600) / 60);
+        el.textContent = (h > 0 ? h + ' h ' : '') + m + ' min ' + (s %% 60) + ' s';
+      }, 1000);
+    ", format(as.numeric(Sys.time()) * 1000, scientific = FALSE)))
+    
+    cloud_watch$invoke(
+      key_path    = cs$key_path,
+      bucket      = cs$bucket,
+      project     = cs$project,
+      region      = cs$region,
+      jid         = job_id,
+      status_path = sp,
+      max_hours   = 48
+    )
+  }
+  
+  .cloud_stop_clock <- function() {
+    shinyjs::runjs("clearInterval(window._craibmClk);")
+  }
+  
   # ---- Watching a running job ------------------------------------------------
-
+  
   .cloud_fetch_result <- function(job_id, file_name) {
     cs <- isolate(cloud_settings())
     dest <- file.path(tempdir(), paste0("craibm-cloud-", job_id))
@@ -5102,7 +6375,7 @@ server <- function(input, output, session) {
     if (!isTRUE(dl$pass)) {
       return(list(ok = FALSE, msg = dl$msg, value = NULL))
     }
-
+    
     result_path <- file.path(dest, file_name)
     if (!file.exists(result_path)) {
       return(list(
@@ -5111,7 +6384,7 @@ server <- function(input, output, session) {
         value = NULL
       ))
     }
-
+    
     value <- tryCatch(readRDS(result_path), error = function(e) e)
     if (inherits(value, "error")) {
       return(list(
@@ -5123,47 +6396,18 @@ server <- function(input, output, session) {
     }
     list(ok = TRUE, msg = dl$msg, value = value)
   }
-
+  
   .cloud_apply_perf_result <- function(res, prog) {
-    status <- if (is.null(res$status)) "" else as.character(res$status[[1L]])
-    memory_class <- if (is.null(res$memory_precheck)) {
-      ""
-    } else {
-      as.character(res$memory_precheck[[1L]])
-    }
-
-    if (status %in% c("memory_abort", "memory_crash")) {
-      sys_status$mem_safe <- FALSE
-      sys_status$memory_check_done <- TRUE
-      sys_status$memory_retest_required <- TRUE
-      verdict <- "\U0001F6D1 The rented machine is not memory-safe for this plan."
-    } else if (identical(status, "worker_error") ||
-               !memory_class %in% c("safe", "warning")) {
-      sys_status$mem_safe <- NA
-      sys_status$memory_check_done <- FALSE
-      sys_status$memory_retest_required <- TRUE
-      verdict <- "\u274c The cloud benchmark did not produce a usable memory verdict."
-    } else {
-      sys_status$mem_safe <- TRUE
-      sys_status$memory_check_done <- TRUE
-      sys_status$memory_retest_required <- FALSE
-      verdict <- if (identical(memory_class, "warning")) {
-        "\u26a0\ufe0f The plan is below the hard limit but exceeds currently available RAM."
-      } else {
-        "\u2705 The rented machine passed the memory check."
-      }
-    }
-
-    sys_status$log_oversub <- paste0(
-      verdict, "\n",
-      "==========================================\n",
-      .cloud_timing_lines(prog), "\n",
-      if (!is.na(prog$report)) prog$report else "",
-      "\n\nThese figures describe the rented machine, not this computer."
+    .apply_perf_result(
+      res = res,
+      cloud = TRUE,
+      prog = prog
     )
   }
-
+  
   .cloud_mark_failed <- function(message) {
+    removeNotification("cloud_job_notice")
+    .clear_active_run()
     proc_state$cloud_status <- "failed"
     tt <- isolate(proc_state$cloud_task_type)
     if (identical(tt, "validation")) {
@@ -5177,155 +6421,332 @@ server <- function(input, output, session) {
     showNotification("The cloud run failed.", type = "error", duration = NULL)
   }
   
-  # Polls the progress file. A failed poll never interrupts the loop: the cloud
-  # job keeps running regardless of what happens to this connection, so a
-  # dropped network shows as a warning and clears itself when it returns.
+  # A job that was deliberately stopped is not a failure. It is reported
+  # separately so the wording matches what actually happened, whether the job
+  # was cancelled from this page or from the Google Cloud console.
+  .cloud_mark_cancelled <- function(message, notify = TRUE) {
+    removeNotification("cloud_job_notice")
+    .clear_active_run()
+    proc_state$cloud_status <- "cancelled"
+    tt <- isolate(proc_state$cloud_task_type)
+    if (identical(tt, "validation")) {
+      sys_status$test_run_done <- FALSE
+    } else if (identical(tt, "perfcheck")) {
+      sys_status$mem_safe <- NA
+      sys_status$memory_check_done <- FALSE
+      sys_status$memory_retest_required <- TRUE
+    }
+    sys_status$cloud_summary <- message
+    if (isTRUE(notify)) {
+      showNotification("The cloud job was cancelled.", type = "warning", duration = 10)
+    }
+  }
+  
+  # Clears the display left by a previous cloud job so a new attempt does not
+  # start out showing the outcome of the last one.
+  .cloud_reset_display <- function() {
+    if (!is.null(proc_state$cloud_status) &&
+        proc_state$cloud_status %in% c("submitted", "running")) {
+      return(invisible(FALSE))
+    }
+    proc_state$cloud_status       <- NULL
+    proc_state$cloud_job_id       <- NULL
+    proc_state$cloud_task_type    <- NULL
+    proc_state$cloud_done         <- NA_integer_
+    proc_state$cloud_total        <- NA_integer_
+    proc_state$cloud_last_report  <- NULL
+    proc_state$cloud_result_uri   <- NULL
+    proc_state$cloud_no_progress  <- 0L
+    proc_state$cloud_poll_fails   <- 0L
+    proc_state$cloud_submitted_at <- NULL
+    proc_state$cloud_queue_warned <- FALSE
+    proc_state$cloud_perf_requested <- NA_integer_
+    proc_state$cloud_perf_probe     <- NA_integer_
+    sys_status$cloud_summary      <- NULL
+    invisible(TRUE)
+  }
+  
+  # Download and apply a completed Test 1 or Test 2 result. Full-model archives
+  # stay in Cloud Storage until the user chooses Download.
+  .cloud_collect_result <- function(jid, prog) {
+    tt <- isolate(proc_state$cloud_task_type)
+    if (is.null(tt)) tt <- ""
+    
+    msg <- switch(
+      tt,
+      validation = "Model validation has finished. See the Test 1 report.",
+      perfcheck = paste0(
+        "Parallel performance check has finished. ",
+        "See the Test 2 report."
+      ),
+      full = paste0(
+        "The full simulation has finished. ",
+        "See Step 3b and download the results."
+      ),
+      "The cloud run has finished."
+    )
+    
+    showNotification(
+      msg,
+      id = "cloud_job_notice",
+      type = "message",
+      duration = NULL
+    )
+    
+    if (identical(tt, "full")) return(invisible(TRUE))
+    
+    file_name <- if (identical(tt, "validation")) {
+      "validation_result.rds"
+    } else if (identical(tt, "perfcheck")) {
+      "perfcheck_result.rds"
+    } else {
+      return(invisible(TRUE))
+    }
+    
+    fetched <- tryCatch(
+      .cloud_fetch_result(jid, file_name),
+      error = function(e) {
+        list(ok = FALSE, msg = conditionMessage(e))
+      }
+    )
+    
+    if (!isTRUE(fetched$ok)) {
+      if (identical(tt, "perfcheck")) {
+        sys_status$mem_safe <- NA
+        sys_status$memory_check_done <- FALSE
+        sys_status$memory_retest_required <- TRUE
+        sys_status$log_oversub <- paste0(
+          "\u26a0\ufe0f The check finished, but its verdict could not be loaded.\n",
+          fetched$msg,
+          "\nThe full run stays blocked until a valid verdict exists."
+        )
+      } else {
+        sys_status$test_run_done <- FALSE
+        sys_status$log_2a <- paste0(
+          "\u26a0\ufe0f Validation finished, but its result could not be loaded.\n",
+          fetched$msg,
+          "\nThe archive is still available from the download control."
+        )
+      }
+      return(invisible(FALSE))
+    }
+    
+    tryCatch({
+      if (identical(tt, "perfcheck")) {
+        .cloud_apply_perf_result(fetched$value, prog)
+      } else {
+        test_sim_data(fetched$value)
+        sys_status$test_run_done <- TRUE
+        est <- .estimate_full_run(prog$compute_sec)
+        sys_status$log_2a <- paste0(
+          "\u2705 Test 1: Model Validation Complete\n",
+          "==========================================\n",
+          "Container preparation and input download: ",
+          .format_test_duration(prog$startup_sec),
+          "\n",
+          "Model calculation for the selected scenario: ",
+          .format_test_duration(prog$compute_sec),
+          "\n",
+          "------------------------------------------\n",
+          "Planned full-model jobs: ",
+          est$total_tasks,
+          "\n",
+          "Simultaneous replicate workers: ",
+          est$workers,
+          "\n",
+          "Rough full-model calculation-time estimate: ",
+          est$formatted,
+          "\n",
+          "Cloud machine startup, result writing and transfer add extra time.\n",
+          "------------------------------------------\n",
+          "The validation result was downloaded and the plot was updated."
+        )
+      }
+    }, error = function(e) {
+      if (identical(tt, "perfcheck")) {
+        sys_status$mem_safe <- NA
+        sys_status$memory_check_done <- FALSE
+        sys_status$memory_retest_required <- TRUE
+        sys_status$log_oversub <- paste0(
+          "\u26a0\ufe0f The result was downloaded but could not be interpreted.\n",
+          conditionMessage(e)
+        )
+      } else {
+        sys_status$test_run_done <- FALSE
+        sys_status$log_2a <- paste0(
+          "\u26a0\ufe0f The result was downloaded but could not be interpreted.\n",
+          conditionMessage(e)
+        )
+      }
+    })
+    
+    invisible(TRUE)
+  }
+  
+  # ExtendedTask pushes this observer awake only when its separate R process
+  # returns. No timer and no Cloud API request runs in the Shiny process.
   observe({
-    req(!is.null(proc_state$cloud_job_id))
-    req(proc_state$cloud_status %in% c("submitted", "running"))
+    s <- cloud_watch$status()
+    if (s %in% c("initial", "running")) return()
     
-    invalidateLater(20000)
+    tryCatch({
+      watched <- isolate(proc_state$cloud_watch_job)
+      current <- isolate(proc_state$cloud_job_id)
+      
+      if (is.null(watched) || !identical(watched, current)) {
+        .cloud_stop_clock()
+        return()
+      }
+      
+      if (identical(s, "error")) {
+        .cloud_stop_clock()
+        .cloud_mark_failed(paste0(
+          "\U0001F6D1 The watcher process stopped unexpectedly.\n",
+          "Reason: ",
+          conditionMessage(cloud_watch$result()),
+          "\nThe cloud job itself is unaffected and may still be running. ",
+          "Check the Batch console, or use Download results once it finishes."
+        ))
+        return()
+      }
+      
+      r <- cloud_watch$result()
+      .cloud_stop_clock()
+      outcome <- if (is.null(r$outcome)) "" else r$outcome
+      
+      if (identical(outcome, "done")) {
+        proc_state$cloud_status <- "done"
+        proc_state$cloud_done <- r$prog$done
+        proc_state$cloud_total <- r$prog$total
+        .clear_active_run()
+        sys_status$cloud_summary <- .cloud_finish_summary(r$prog)
+        .cloud_collect_result(current, r$prog)
+      } else if (identical(outcome, "failed")) {
+        .cloud_mark_failed(paste0(
+          "\U0001F6D1 The cloud run failed.\n",
+          if (!is.null(r$prog$error) &&
+              length(r$prog$error) == 1L &&
+              !is.na(r$prog$error)) {
+            paste0("Reason: ", r$prog$error, "\n")
+          } else {
+            ""
+          },
+          "Results completed before the failure can still be downloaded."
+        ))
+      } else if (identical(outcome, "cancelled")) {
+        .cloud_mark_cancelled(paste0(
+          "The job was cancelled.\n",
+          "Billing has stopped. Anything already finished can still be downloaded."
+        ))
+      } else if (identical(outcome, "batch_failed")) {
+        .cloud_mark_failed(paste0(
+          "\U0001F6D1 The Batch job failed.\n",
+          "Check the Batch logs for image-pull, IAM, quota, or VM errors."
+        ))
+      } else if (identical(outcome, "no_report")) {
+        .cloud_mark_failed(paste0(
+          "\U0001F6D1 Batch reported success, but the container never wrote ",
+          "progress.json.\nCheck Cloud Logging and the bucket permissions."
+        ))
+      } else {
+        .clear_active_run()
+        proc_state$cloud_status <- "failed"
+        sys_status$cloud_summary <- paste0(
+          "\u26a0\ufe0f This page stopped following the job.\n",
+          if (is.null(r$reason)) {
+            ""
+          } else {
+            paste0("Reason: ", r$reason, "\n")
+          },
+          "IMPORTANT: the cloud job may still be running and billing. ",
+          "Check the Batch console. Results, if any, will still be at:\n",
+          isolate(proc_state$cloud_result_uri)
+        )
+        showNotification(
+          "Stopped following the cloud job. It may still be running.",
+          type = "warning",
+          duration = NULL
+        )
+      }
+    }, error = function(e) {
+      .cloud_stop_clock()
+      .clear_active_run()
+      proc_state$cloud_status <- "failed"
+      sys_status$cloud_summary <- paste0(
+        "\u26a0\ufe0f The cloud result arrived but could not be processed.\n",
+        conditionMessage(e),
+        "\nThe archive is still available with Download results."
+      )
+    })
+  })
+  
+  # This is the sole remaining cloud timer. It reads only a tiny local RDS
+  # written by the watcher process; it performs no network work.
+  output$cloud_watch_panel <- renderUI({
+    invalidateLater(60000)
     
-    if (isTRUE(proc_state$cloud_polling)) return()
-    proc_state$cloud_polling <- TRUE
-    on.exit(proc_state$cloud_polling <- FALSE, add = TRUE)
+    jid <- proc_state$cloud_job_id
+    st <- proc_state$cloud_status
+    if (is.null(jid) ||
+        is.null(st) ||
+        !st %in% c("submitted", "running")) {
+      return(NULL)
+    }
     
-    cs <- isolate(cloud_settings())
-    jid <- isolate(proc_state$cloud_job_id)
-    
-    prog <- tryCatch({
-      auth <- cloud_token()
-      cloud_poll_progress(auth, cs$bucket, jid)
+    info <- tryCatch({
+      p <- .cloud_status_file(jid)
+      if (file.exists(p)) readRDS(p) else NULL
     }, error = function(e) NULL)
     
-    if (is.null(prog)) {
-      proc_state$cloud_poll_fails <- proc_state$cloud_poll_fails + 1L
-      return()
+    phase <- if (is.null(info$phase)) "waiting" else info$phase
+    detail <- if (is.null(info$detail)) {
+      "Waiting for the first report from the cloud machine."
+    } else {
+      info$detail
     }
-    proc_state$cloud_poll_fails <- 0L
-
-    # A job can fail while its VM is being provisioned or while the image is
-    # being pulled, before entrypoint.R has a chance to create progress.json.
-    # Query Batch whenever no progress file exists so that state is never hidden.
-    if (!isTRUE(prog$available)) {
-      proc_state$cloud_no_progress <- proc_state$cloud_no_progress + 1L
-      st <- tryCatch({
-        auth <- cloud_token()
-        cloud_job_state(auth, cs$project, cs$region, jid)
-      }, error = function(e) list(ok = FALSE, state = NA_character_))
-
-      if (isTRUE(st$ok) && !is.na(st$state)) {
-        if (st$state %in% c("FAILED", "CANCELLED", "DELETION_IN_PROGRESS")) {
-          .cloud_mark_failed(paste0(
-            "\U0001F6D1 The Batch job stopped before the container could report progress (",
-            st$state, ").\nCheck the Batch logs for image-pull, IAM, quota, or VM errors."
-          ))
-        } else if (identical(st$state, "SUCCEEDED")) {
-          .cloud_mark_failed(paste0(
-            "\U0001F6D1 Batch reported success, but the container never wrote progress.json.\n",
-            "Check Cloud Logging and the bucket permissions for the Batch worker account."
-          ))
-        } else if (identical(st$state, "RUNNING")) {
-          proc_state$cloud_status <- "running"
-        }
-      }
-      return()
+    
+    box_class <- if (identical(phase, "queued")) {
+      "alert alert-warning"
+    } else if (identical(phase, "unreachable")) {
+      "alert alert-secondary"
+    } else {
+      "alert alert-info"
     }
-
-    proc_state$cloud_no_progress <- 0L
-    proc_state$cloud_done  <- prog$done
-    proc_state$cloud_total <- prog$total
-    if (!is.na(prog$report)) proc_state$cloud_last_report <- prog$report
-
-    if (identical(prog$status, "done")) {
-      proc_state$cloud_status <- "done"
-      sys_status$cloud_summary <- .cloud_finish_summary(prog)
-      showNotification("The cloud run has finished.", type = "message", duration = NULL)
-
-      # Validation and performance-check archives are small and are required to
-      # update the local test pages, so collect them automatically.
-      tt <- isolate(proc_state$cloud_task_type)
-      if (identical(tt, "validation")) {
-        fetched <- tryCatch(
-          .cloud_fetch_result(jid, "validation_result.rds"),
-          error = function(e) list(ok = FALSE, msg = conditionMessage(e))
-        )
-        if (isTRUE(fetched$ok)) {
-          test_sim_data(fetched$value)
-          sys_status$test_run_done <- TRUE
-          sys_status$log_2a <- paste0(
-            "\u2705 Cloud model validation finished.\n",
-            "==========================================\n",
-            .cloud_timing_lines(prog),
-            "\nThe validation result was downloaded and the test plot was updated."
-          )
-        } else {
-          sys_status$test_run_done <- FALSE
-          sys_status$log_2a <- paste0(
-            "\u26a0\ufe0f Cloud validation finished, but its result could not be loaded.\n",
-            fetched$msg,
-            "\nThe archive remains available from the cloud download control."
-          )
-        }
-      } else if (identical(tt, "perfcheck")) {
-        fetched <- tryCatch(
-          .cloud_fetch_result(jid, "perfcheck_result.rds"),
-          error = function(e) list(ok = FALSE, msg = conditionMessage(e))
-        )
-        if (isTRUE(fetched$ok)) {
-          .cloud_apply_perf_result(fetched$value, prog)
-        } else {
-          sys_status$mem_safe <- NA
-          sys_status$memory_check_done <- FALSE
-          sys_status$memory_retest_required <- TRUE
-          sys_status$log_oversub <- paste0(
-            "\u26a0\ufe0f Cloud performance check finished, but its verdict could not be loaded.\n",
-            fetched$msg,
-            "\nThe full run remains blocked until a valid memory verdict is available."
-          )
-        }
-      }
-      return()
-    }
-
-    if (identical(prog$status, "failed")) {
-      .cloud_mark_failed(paste0(
-        "\U0001F6D1 The cloud run failed.\n",
-        if (!is.na(prog$error)) paste0("Reason: ", prog$error, "\n") else "",
-        "Results completed before the failure can still be downloaded."
-      ))
-      return()
-    }
-
-    proc_state$cloud_status <- "running"
-
-    # A job that has stopped reporting may have lost its machine. The state
-    # held by Batch settles which it is.
-    if (isTRUE(prog$stale)) {
-      st <- tryCatch({
-        auth <- cloud_token()
-        cloud_job_state(auth, cs$project, cs$region, jid)
-      }, error = function(e) list(ok = FALSE, state = NA_character_))
-
-      if (isTRUE(st$ok) && !is.na(st$state) &&
-          st$state %in% c("FAILED", "CANCELLED", "DELETION_IN_PROGRESS")) {
-        .cloud_mark_failed(paste0(
-          "\U0001F6D1 The cloud machine stopped before the run finished (",
-          st$state, ").\n",
-          "Whatever finished beforehand was saved and can still be downloaded."
-        ))
-      } else if (isTRUE(st$ok) && identical(st$state, "SUCCEEDED")) {
-        .cloud_mark_failed(paste0(
-          "\U0001F6D1 Batch finished, but the container did not publish a final status.\n",
-          "Check Cloud Logging; partial results may still be available."
-        ))
-      }
-    }
+    
+    tags$div(
+      class = box_class,
+      style = "padding:8px; margin-bottom:10px;",
+      icon(if (identical(phase, "running")) "spinner" else "cloud-arrow-up"),
+      tags$b(" Cloud job in progress."),
+      tags$br(),
+      detail,
+      tags$br(),
+      tags$span(
+        style = "font-size:11px;",
+        "Elapsed: ",
+        tags$span(id = "cloud_clock", "0 min 0 s")
+      ),
+      tags$br(),
+      tags$span(
+        style = "font-size:11px; color:#6c757d;",
+        "You may close this page. The run continues; results will be at ",
+        tags$code(proc_state$cloud_result_uri)
+      )
+    )
   })
   
   # ---- Controls shown during and after a cloud run ---------------------------
   
-  output$cloud_run_controls <- renderUI({
+  .build_cloud_controls <- function(cancel_id = NULL) {
+    
+    task_label <- switch(
+      proc_state$cloud_task_type,
+      validation = "Model validation",
+      perfcheck  = "Parallel performance check",
+      full       = "Full simulation",
+      "Cloud job"
+    )
+    
     status <- proc_state$cloud_status
     
     if (is.null(status)) {
@@ -5345,27 +6766,85 @@ server <- function(input, output, session) {
                tags$br(), "The cloud job is unaffected and keeps running.")
     } else NULL
     
-    header <- switch(status,
-      submitted = tags$div(class = "alert alert-info", style = "padding:6px;",
-                           icon("cloud-arrow-up"), tags$b(" Submitted."),
-                           tags$br(), "Waiting for the machine to start."),
-      running   = tags$div(class = "alert alert-info", style = "padding:6px;",
-                           icon("spinner"), tags$b(" Running on Google Cloud."),
-                           tags$br(), progress_line),
-      done      = tags$div(class = "alert alert-success", style = "padding:6px;",
-                           icon("check-circle"), tags$b(" Finished.")),
-      failed    = tags$div(class = "alert alert-danger", style = "padding:6px;",
-                           icon("triangle-exclamation"), tags$b(" Stopped before finishing.")),
-      cancelled = tags$div(class = "alert alert-warning", style = "padding:6px;",
-                           icon("ban"), tags$b(" Cancelled. Billing has stopped.")),
+    header <- switch(
+      status,
+      
+      submitted = tags$div(
+        class = "alert alert-info",
+        style = "padding:6px;",
+        icon("cloud-arrow-up"),
+        tags$b(paste0(" ", task_label, " submitted.")),
+        tags$br(),
+        "Please wait while the cloud machine starts.",
+        {
+          waited <- if (is.null(proc_state$cloud_submitted_at)) 0 else
+            as.numeric(difftime(Sys.time(), proc_state$cloud_submitted_at, units = "mins"))
+          if (waited >= 1) {
+            tagList(
+              tags$br(),
+              tags$span(style = "font-size:11px;",
+                        paste0("Waiting for ", round(waited), " minute(s).")),
+              if (waited > 10) {
+                tags$div(
+                  style = "margin-top:6px; font-size:11px;",
+                  tags$b("This is longer than usual."),
+                  " Google holds a job in the queue when the requested machine type",
+                  " is unavailable in this region or a quota is exhausted.",
+                  " Check the job in the Batch console, or cancel it and try a",
+                  " different machine type or region."
+                )
+              }
+            )
+          }
+        }
+      ),
+      
+      running = tags$div(
+        class = "alert alert-info",
+        style = "padding:6px;",
+        icon("spinner"),
+        tags$b(paste0(" ", task_label, " is running on Google Cloud.")),
+        tags$br(),
+        progress_line
+      ),
+      
+      done = tags$div(
+        class = "alert alert-success",
+        style = "padding:6px;",
+        icon("check-circle"),
+        tags$b(paste0(" ", task_label, " finished."))
+      ),
+      
+      failed = tags$div(
+        class = "alert alert-danger",
+        style = "padding:6px;",
+        icon("triangle-exclamation"),
+        tags$b(paste0(" ", task_label, " stopped before finishing."))
+      ),
+      
+      cancelled = tags$div(
+        class = "alert alert-warning",
+        style = "padding:6px;",
+        icon("ban"),
+        tags$b(paste0(" ", task_label, " was cancelled.")),
+        tags$br(),
+        "Billing has stopped."
+      ),
+      
       NULL
     )
     
     tagList(
       header,
       conn_warning,
-      if (!is.null(sys_status$cloud_summary)) {
-        tags$pre(style = "white-space:pre-wrap; font-size:11px;", sys_status$cloud_summary)
+      if (
+        identical(proc_state$cloud_task_type, "full") &&
+        !is.null(sys_status$cloud_summary)
+      ) {
+        tags$pre(
+          style = "white-space:pre-wrap; font-size:11px;",
+          sys_status$cloud_summary
+        )
       },
       tags$div(
         style = "font-size:11px; color:#6c757d; margin-bottom:8px;",
@@ -5373,9 +6852,23 @@ server <- function(input, output, session) {
         tags$br(), tags$code(proc_state$cloud_result_uri),
         tags$br(), "Closing the page ends progress reporting."
       ),
-      if (status %in% c("submitted", "running")) {
-        actionButton("cloud_cancel", "Cancel cloud job (stops billing)",
-                     class = "btn-danger", width = "100%", icon = icon("ban"))
+      if (
+        status %in% c("submitted", "running") &&
+        !is.null(cancel_id)
+      ) {
+        tagList(
+          actionButton(cancel_id, "Cancel cloud job (stops billing)",
+                       class = "btn-danger", width = "100%", icon = icon("ban")),
+          if (isTRUE(proc_state$cloud_release_offer)) {
+            tagList(
+              br(),
+              actionButton("cloud_release_tracking",
+                           "Release tracking (does not stop the cloud job)",
+                           class = "btn-outline-secondary btn-sm", width = "100%",
+                           icon = icon("link-slash"))
+            )
+          }
+        )
       },
       if (status %in% c("done", "failed", "cancelled")) {
         tagList(
@@ -5384,16 +6877,105 @@ server <- function(input, output, session) {
                        icon = icon("cloud-arrow-down")),
           if (status %in% c("failed", "cancelled")) {
             tagList(br(),
-              actionButton("cloud_download_partial", "Download completed runs only",
-                           class = "btn-warning", width = "100%",
-                           icon = icon("box-open")))
-          }
+                    actionButton("cloud_download_partial", "Download completed runs only",
+                                 class = "btn-warning", width = "100%",
+                                 icon = icon("box-open")))
+          },
+          br(), br(),
+          actionButton("cloud_dismiss", "Clear this result",
+                       class = "btn-outline-secondary btn-sm", width = "100%",
+                       icon = icon("xmark"))
         )
       }
     )
+  }
+  
+  output$cloud_validation_controls <- renderUI({
+    
+    if (!identical(proc_state$cloud_task_type, "validation")) {
+      return(NULL)
+    }
+    
+    .build_cloud_controls(cancel_id = NULL)
   })
   
-  observeEvent(input$cloud_cancel, {
+  
+  output$cloud_perf_controls <- renderUI({
+    
+    if (!identical(proc_state$cloud_task_type, "perfcheck")) {
+      return(NULL)
+    }
+    
+    .build_cloud_controls(cancel_id = NULL)
+  })
+  
+  
+  output$cloud_run_controls <- renderUI({
+    
+    if (!identical(proc_state$cloud_task_type, "full")) {
+      return(
+        helpText(
+          "No full cloud simulation has been submitted. ",
+          "Model Validation and Parallel Performance Check results are shown in Step 3a."
+        )
+      )
+    }
+    
+    .build_cloud_controls(cancel_id = "cloud_cancel_full")
+  })
+  
+  
+  observeEvent(input$cloud_dismiss, {
+    .cloud_reset_display()
+  })
+  
+  # The Test 1 and Test 2 stop buttons are always visible directly beneath
+  # their Run buttons. They are enabled only while their own cloud job is
+  # active, which avoids duplicate Shiny input IDs across the two tabs.
+  observe({
+    validation_active <- (
+      identical(proc_state$cloud_task_type, "validation") &&
+        !is.null(proc_state$cloud_status) &&
+        proc_state$cloud_status %in% c("submitted", "running")
+    )
+    
+    perf_active <- (
+      identical(proc_state$cloud_task_type, "perfcheck") &&
+        !is.null(proc_state$cloud_status) &&
+        proc_state$cloud_status %in% c("submitted", "running")
+    )
+    
+    if (validation_active) {
+      shinyjs::enable("stop_test1_cloud")
+    } else {
+      shinyjs::disable("stop_test1_cloud")
+    }
+    
+    if (perf_active) {
+      shinyjs::enable("stop_test2_cloud")
+    } else {
+      shinyjs::disable("stop_test2_cloud")
+    }
+  })
+  
+  .show_cloud_cancel_modal <- function(expected_task = NULL) {
+    active <- (
+      !is.null(proc_state$cloud_status) &&
+        proc_state$cloud_status %in% c("submitted", "running")
+    )
+    matching_task <- (
+      is.null(expected_task) ||
+        identical(proc_state$cloud_task_type, expected_task)
+    )
+    
+    if (!isTRUE(active) || !isTRUE(matching_task)) {
+      showNotification(
+        "There is no matching cloud job to stop.",
+        type = "warning"
+      )
+      return(invisible(FALSE))
+    }
+    
     showModal(modalDialog(
       title = "Cancel the cloud job?",
       "The machine will be released and billing will stop. Runs that have already ",
@@ -5404,32 +6986,141 @@ server <- function(input, output, session) {
         actionButton("cloud_cancel_confirm", "Cancel the job", class = "btn-danger")
       )
     ))
+    
+    invisible(TRUE)
+  }
+  
+  observeEvent(input$stop_test1_cloud, {
+    .show_cloud_cancel_modal("validation")
+  })
+  
+  observeEvent(input$stop_test2_cloud, {
+    .show_cloud_cancel_modal("perfcheck")
+  })
+  
+  observeEvent(input$cloud_cancel_full, {
+    .show_cloud_cancel_modal("full")
   })
   
   observeEvent(input$cloud_cancel_confirm, {
-    removeModal()
     cs <- cloud_settings()
     jid <- proc_state$cloud_job_id
-    req(!is.null(jid))
+    
+    if (is.null(jid)) {
+      removeModal()
+      showNotification(
+        "No cloud job is currently being tracked.",
+        type = "warning"
+      )
+      return()
+    }
+    
+    showNotification(
+      "Stopping the cloud job...",
+      id = "cloud_cancel_progress",
+      type = "message",
+      duration = NULL
+    )
+    
+    # Always clean up the confirmation modal, even if authentication or the
+    # cancellation request produces an error.
+    on.exit({
+      removeNotification("cloud_cancel_progress")
+      removeModal()
+      
+      # Bootstrap can occasionally leave its modal backdrop behind after a
+      # synchronous API request. Remove that orphaned backdrop after Shiny has
+      # processed removeModal().
+      shinyjs::runjs("
+      setTimeout(function() {
+        document.querySelectorAll('.modal-backdrop').forEach(function(x) {
+          x.remove();
+        });
+        document.body.classList.remove('modal-open');
+        document.body.style.removeProperty('padding-right');
+      }, 200);
+    ")
+    }, add = TRUE)
     
     res <- tryCatch({
       auth <- cloud_token()
-      cloud_cancel_job(auth, cs$project, cs$region, jid)
+      cloud_cancel_job(
+        auth,
+        cs$project,
+        cs$region,
+        jid
+      )
       TRUE
-    }, error = function(e) conditionMessage(e))
+    }, error = function(e) {
+      conditionMessage(e)
+    })
     
     if (isTRUE(res)) {
-      proc_state$cloud_status <- "cancelled"
-      done <- proc_state$cloud_done; total <- proc_state$cloud_total
-      sys_status$cloud_summary <- paste0(
+      
+      done  <- proc_state$cloud_done
+      total <- proc_state$cloud_total
+      
+      cancel_summary <- paste0(
         "Job cancelled. Billing has stopped.\n",
-        if (!is.na(done) && !is.na(total))
-          paste0("Completed before cancelling: ", done, " of ", total, " runs.\n") else "",
-        "Use 'Download completed runs only' to collect them."
+        if (
+          length(done) == 1L &&
+          length(total) == 1L &&
+          !is.na(done) &&
+          !is.na(total)
+        ) {
+          paste0(
+            "Completed before cancelling: ",
+            done,
+            " of ",
+            total,
+            " runs.\n"
+          )
+        } else {
+          ""
+        },
+        "Use 'Download completed runs only' to collect any completed output."
       )
-      showNotification("Cloud job cancelled.", type = "message")
+      
+      # This shared helper also:
+      # 1. removes the old persistent 'submitted' notification;
+      # 2. clears the global run lock;
+      # 3. resets the Test 1/Test 2 completion state correctly;
+      # 4. records the cancellation summary.
+      proc_state$cloud_watch_job <- NULL
+      .cloud_stop_clock()
+      .cloud_mark_cancelled(
+        message = cancel_summary,
+        notify = FALSE
+      )
+      
+      showNotification(
+        "Cloud job cancelled. Billing has stopped.",
+        type = "message",
+        duration = 10
+      )
+      
     } else {
-      showNotification(paste("Could not cancel the job:", res), type = "error")
+      
+      showNotification(
+        paste(
+          "Could not cancel the job:",
+          res
+        ),
+        type = "error",
+        duration = 15
+      )
+      
+      sys_status$cloud_summary <- paste0(
+        "\U0001F6D1 The job could not be stopped from this page.\n",
+        "Reason: ",
+        res,
+        "\n\n",
+        "The cloud job may still be running and billing. Stop it in the Google ",
+        "Cloud console, then use the release-tracking control in this app.\n",
+        "Releasing tracking only unlocks this page; it does not stop the cloud job."
+      )
+      
+      proc_state$cloud_release_offer <- TRUE
     }
   })
   
@@ -5489,7 +7180,12 @@ server <- function(input, output, session) {
   
   
   batch_plan <- reactive({
-    req(input$n_iter, input$n_cores, input$out_dir)
+    req(input$n_iter, input$n_cores)
+    
+    cloud_mode <- isTRUE(input$use_cloud)
+    if (!cloud_mode) {
+      req(input$out_dir)
+    }
     
     missing_steps <- get_missing_setup_steps()
     
@@ -5538,7 +7234,25 @@ server <- function(input, output, session) {
     num_scenarios <- nrow(scenarios_df)
     n_iter_val <- suppressWarnings(as.integer(input$n_iter))
     n_cores_set <- suppressWarnings(as.integer(input$n_cores))
-    out_dir_path <- normalizePath(input$out_dir, mustWork = FALSE)
+    bucket_preview <- if (
+      !is.null(input$gcp_bucket) &&
+      length(input$gcp_bucket) == 1L &&
+      nzchar(input$gcp_bucket)
+    ) {
+      input$gcp_bucket
+    } else {
+      "<bucket>"
+    }
+    
+    out_dir_path <- if (cloud_mode) {
+      paste0(
+        "gs://",
+        bucket_preview,
+        "/jobs/<job-id>/"
+      )
+    } else {
+      normalizePath(input$out_dir, mustWork = FALSE)
+    }
     
     if (length(n_iter_val) == 0L || is.na(n_iter_val) || n_iter_val < 1L) n_iter_val <- 1L
     if (length(n_cores_set) == 0L || is.na(n_cores_set) || n_cores_set < 1L) n_cores_set <- 1L
@@ -5668,6 +7382,75 @@ server <- function(input, output, session) {
   # ==========================================================================
   # Helper: enable/disable Start & Stop buttons based on run state
   # ==========================================================================
+  # ==========================================================================
+  # GLOBAL RUN LOCK
+  #
+  # Only one run may be active at a time, whether it is a test on this machine,
+  # a test in the cloud, or the full simulation. While anything is running the
+  # three start buttons are disabled together, so a second run cannot be
+  # started by accident from another tab.
+  # ==========================================================================
+  
+  .set_active_run <- function(kind, mode = "local") {
+    proc_state$active_run      <- kind          # validation / perfcheck / full
+    proc_state$active_run_mode <- mode          # local / cloud
+  }
+  
+  .clear_active_run <- function() {
+    proc_state$active_run      <- NULL
+    proc_state$active_run_mode <- NULL
+  }
+  
+  # Keeps every start button in step with the lock.
+  observe({
+    locked <- !is.null(proc_state$active_run)
+    
+    for (btn in c("run_test_sim", "run_oversub_test", "start_batch")) {
+      if (locked) shinyjs::disable(btn) else shinyjs::enable(btn)
+    }
+  })
+  
+  # Explains, on each test tab, why the buttons are unavailable and which
+  # control will release them.
+  .build_run_lock_note <- function(this_tab) {
+    kind <- proc_state$active_run
+    if (is.null(kind)) return(NULL)
+    
+    mode <- proc_state$active_run_mode
+    label <- switch(kind,
+                    validation = "Test 1 (model validation)",
+                    perfcheck  = "Test 2 (parallel performance check)",
+                    full       = "the full simulation",
+                    "a run"
+    )
+    
+    mine <- identical(kind, this_tab)
+    
+    tags$div(
+      class = "alert alert-secondary",
+      style = "padding:8px; margin-bottom:10px;",
+      icon("lock"),
+      tags$b(paste0(" Start buttons are locked while ", label, " is running.")),
+      tags$br(),
+      if (identical(mode, "cloud")) {
+        if (mine) {
+          "Use the Stop button below to cancel it."
+        } else {
+          "Go to its own tab to stop it, or wait for it to finish."
+        }
+      } else {
+        paste0(
+          "This run is on your own computer and cannot be interrupted once it ",
+          "has started. The buttons will unlock when it finishes."
+        )
+      }
+    )
+  }
+  
+  output$run_lock_note_test1 <- renderUI({ .build_run_lock_note("validation") })
+  output$run_lock_note_test2 <- renderUI({ .build_run_lock_note("perfcheck") })
+  output$run_lock_note_full  <- renderUI({ .build_run_lock_note("full") })
+  
   sync_batch_buttons <- function(is_running, mode = NULL) {
     if (is.null(mode)) mode <- isolate(input$run_mode)
     if (is.null(mode)) mode <- "foreground"
@@ -5682,7 +7465,8 @@ server <- function(input, output, session) {
         shinyjs::disable("stop_batch")
       }
     } else {
-      shinyjs::enable("start_batch")
+      # Only release Start if nothing else is holding the global lock.
+      if (is.null(proc_state$active_run)) shinyjs::enable("start_batch")
       shinyjs::disable("stop_batch")
     }
   }
@@ -5723,29 +7507,35 @@ server <- function(input, output, session) {
       return()
     }
     
-    out_dir_base <- plan$out_dir_path
-    if (out_dir_base == "") return()
+    cloud_mode <- isTRUE(input$use_cloud)
+    out_dir_base <- if (cloud_mode) "" else plan$out_dir_path
     
-    if (!dir.exists(out_dir_base)) {
-      if (!dir.create(out_dir_base, recursive = TRUE, showWarnings = FALSE)) {
-        sys_status$batch_log <- paste0(
-          "❌ Error: Could not create directory:\n",
-          out_dir_base
-        )
-        return()
-      }
-    } else {
-      if (!input$overwrite_existing && length(list.files(out_dir_base)) > 0L) {
-        sys_status$batch_log <- paste0(
-          "⚠️ Warning: Directory exists and is not empty.\n",
-          "Check 'Overwrite' to proceed."
-        )
-        return()
-      }
+    # A Google Cloud run writes to its own job-specific Storage prefix. Local
+    # folder existence, contents and Overwrite therefore must not block it.
+    if (!cloud_mode) {
+      if (out_dir_base == "") return()
       
-      if (input$overwrite_existing && length(list.files(out_dir_base)) > 0L) {
-        unlink(out_dir_base, recursive = TRUE)
-        dir.create(out_dir_base, recursive = TRUE, showWarnings = FALSE)
+      if (!dir.exists(out_dir_base)) {
+        if (!dir.create(out_dir_base, recursive = TRUE, showWarnings = FALSE)) {
+          sys_status$batch_log <- paste0(
+            "❌ Error: Could not create directory:\n",
+            out_dir_base
+          )
+          return()
+        }
+      } else {
+        if (!input$overwrite_existing && length(list.files(out_dir_base)) > 0L) {
+          sys_status$batch_log <- paste0(
+            "⚠️ Warning: Directory exists and is not empty.\n",
+            "Check 'Overwrite' to proceed."
+          )
+          return()
+        }
+        
+        if (input$overwrite_existing && length(list.files(out_dir_base)) > 0L) {
+          unlink(out_dir_base, recursive = TRUE)
+          dir.create(out_dir_base, recursive = TRUE, showWarnings = FALSE)
+        }
       }
     }
     
@@ -5759,64 +7549,71 @@ server <- function(input, output, session) {
     if (length(snap_rm_vec) == 0L) snap_rm_vec <- 0
     snap_burnin_rm <- max(snap_rm_vec, na.rm = TRUE)
     
-    # Auto-save the full settings alongside the results so any run can be
-    # traced back to the settings (and the three bootstrap seeds) that made it.
-    auto_settings_name <- paste0(
-      "work data saved on ",
-      format(
-        Sys.time(),
-        "%Y%m%d_%H%M%S"
-      ),
-      ".rds"
-    )
+    # Local runs save their settings beside their result files. Cloud runs
+    # already include settings_rds in the uploaded payload, so they must not
+    # touch the local output folder at all.
+    auto_settings_log_line <- ""
     
-    auto_settings_path <- file.path(
-      out_dir_base,
-      auto_settings_name
-    )
-    
-    auto_save_result <- tryCatch(
-      {
-        saveRDS(
-          collect_settings(),
-          auto_settings_path
+    if (!cloud_mode) {
+      auto_settings_name <- paste0(
+        "work data saved on ",
+        format(
+          Sys.time(),
+          "%Y%m%d_%H%M%S"
+        ),
+        ".rds"
+      )
+      
+      auto_settings_path <- file.path(
+        out_dir_base,
+        auto_settings_name
+      )
+      
+      auto_save_result <- tryCatch(
+        {
+          saveRDS(
+            collect_settings(),
+            auto_settings_path
+          )
+          
+          list(
+            ok = TRUE,
+            error = NULL
+          )
+        },
+        error = function(e) {
+          list(
+            ok = FALSE,
+            error = conditionMessage(e)
+          )
+        }
+      )
+      
+      auto_settings_log_line <- if (isTRUE(auto_save_result$ok)) {
+        paste0(
+          "💾 Settings snapshot saved: ",
+          auto_settings_name,
+          "\n"
         )
-        
-        list(
-          ok = TRUE,
-          error = NULL
-        )
-      },
-      error = function(e) {
-        list(
-          ok = FALSE,
-          error = conditionMessage(e)
+      } else {
+        paste0(
+          "⚠️ Settings snapshot could not be saved: ",
+          auto_save_result$error,
+          "\n"
         )
       }
-    )
-    
-    auto_settings_log_line <- if (isTRUE(auto_save_result$ok)) {
-      
-      paste0(
-        "💾 Settings snapshot saved: ",
-        auto_settings_name,
-        "\n"
-      )
-      
-    } else {
-      
-      paste0(
-        "⚠️ Settings snapshot could not be saved: ",
-        auto_save_result$error,
-        "\n"
-      )
     }
     
     # A cloud run is handed over here. Nothing is computed on this machine, so
     # the foreground and background distinction does not apply and no child
     # process is started: the application only uploads, submits and then
     # watches from a distance.
-    if (isTRUE(input$use_cloud)) {
+    if (cloud_mode) {
+      sys_status$batch_log <- paste0(
+        "\u2601\ufe0f Uploading the full simulation to Google Cloud.\n",
+        "Please wait while the input package is prepared and submitted."
+      )
+      
       sub <- cloud_submit(
         "full",
         payload = list(
@@ -5838,6 +7635,8 @@ server <- function(input, output, session) {
           if (!is.null(sub$msg)) sub$msg else "")
         return()
       }
+      
+      .cloud_start_watch(sub$job_id)
       
       sys_status$batch_log <- paste0(
         "\u2601\ufe0f SIMULATION SUBMITTED TO GOOGLE CLOUD\n",
@@ -5895,6 +7694,7 @@ server <- function(input, output, session) {
     selected_worker_func <- run_whole_scenario_job_shiny
     
     proc_state$is_running <- TRUE
+    .set_active_run("full", if (isTRUE(input$use_cloud)) "cloud" else "local")
     sync_batch_buttons(TRUE, run_mode)
     
     if (run_mode == "background") {
@@ -6201,6 +8001,8 @@ server <- function(input, output, session) {
           }
           removeNotification(run_notif_id)
           proc_state$is_running <- FALSE
+          .clear_active_run()
+          .clear_active_run()
           sync_batch_buttons(FALSE, "foreground")
         })
         

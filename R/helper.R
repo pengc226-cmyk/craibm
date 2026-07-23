@@ -1684,11 +1684,19 @@ compute_T_safe <- function(theta_clean,
 #' @export
 get_system_memory_mb <- function() {
   if (!requireNamespace("ps", quietly = TRUE)) {
-    return(list(total_mb = 8 * 1024, available_mb = 4 * 1024, used_percent = 50))
+    return(list(
+      total_mb = NA_real_,
+      available_mb = NA_real_,
+      used_percent = NA_real_
+    ))
   }
   info <- tryCatch(ps::ps_system_memory(), error = function(e) NULL)
   if (is.null(info)) {
-    return(list(total_mb = 8 * 1024, available_mb = 4 * 1024, used_percent = 50))
+    return(list(
+      total_mb = NA_real_,
+      available_mb = NA_real_,
+      used_percent = NA_real_
+    ))
   }
   # Different ps versions may name this field "avail" or "available".
   available_bytes <- if ("available" %in% names(info)) {

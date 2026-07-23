@@ -231,6 +231,15 @@ n_workers      <- as.integer(payload$actual_cores)
 scenarios_df   <- payload$scenarios_df
 policy_logic   <- payload$policy_logic
 burnin_rm      <- payload$burnin_rm
+all_params_packed <- list(
+  params = all_params,
+  data_pack = list(
+    zr_vec    = all_params$z_vec,
+    W1_mat    = all_params$alk_mat,
+    Theta_mat = all_params$agedata_mat
+  ),
+  compliance_structure = all_params$compliance_struct
+)
 
 if (is.null(worker_packets) || length(worker_packets) == 0L) {
   fail("The payload contained no work to do.")
@@ -291,7 +300,7 @@ ok <- tryCatch({
   }))
   parallel::clusterExport(
     cl,
-    varlist = c("scenarios_df", "policy_logic", "all_params",
+    varlist = c("scenarios_df", "policy_logic", "all_params_packed",
                 "burnin_rm", "OUT_DIR", "PROG_LOG"),
     envir = environment()
   )
@@ -309,7 +318,7 @@ ok <- tryCatch({
           task_info           = task_info,
           scenarios_df        = scenarios_df,
           policy_combos_logic = policy_logic,
-          all_params          = all_params,
+          all_params          = all_params_packed,
           out_dir_base        = OUT_DIR,
           cpp_abs_path        = NULL
         )

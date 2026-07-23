@@ -517,23 +517,70 @@ check_design_inputs <- function(file_obj, df, esd_str, pae_str, rm_str, breaks_s
   msgs <- c()
   
   # --- 1. CSV ---
-  ext_err <- check_csv_ext(file_obj$name)
-  if (!is.null(ext_err)) {
-    msgs <- c(msgs, ext_err)
+  if (is.null(df) || nrow(df) == 0L) {
+    
+    msgs <- c(
+      msgs,
+      "❌ Error: Upload or restore a Size limit CSV.\n"
+    )
+    
   } else {
-    if (is.null(df) || nrow(df) == 0) {
-      msgs <- c(msgs, "❌ Error: Size limit CSV is empty.\n")
+    
+    if (
+      !is.null(file_obj) &&
+      !is.null(file_obj$name) &&
+      nzchar(file_obj$name)
+    ) {
+      ext_err <- check_csv_ext(file_obj$name)
+      
+      if (!is.null(ext_err)) {
+        msgs <- c(msgs, ext_err)
+      }
+    }
+    
+    req_cols <- c(
+      "scenario_name",
+      "min_len_mm",
+      "max_len_mm"
+    )
+    
+    missing <- setdiff(req_cols, names(df))
+    
+    if (length(missing) > 0L) {
+      
+      msgs <- c(
+        msgs,
+        paste0(
+          "❌ Error: CSV missing columns: ",
+          paste(missing, collapse = ", "),
+          ".\n"
+        )
+      )
+      
     } else {
       
-      req_cols <- c("scenario_name", "min_len_mm", "max_len_mm")
-      missing <- setdiff(req_cols, names(df))
-      if (length(missing) > 0) {
-        msgs <- c(msgs, paste0("❌ Error: CSV missing columns: ", paste(missing, collapse=", "), ".\n"))
-      } else {
-        
-        if (!is.numeric(df$min_len_mm)) msgs <- c(msgs, "❌ Error: 'min_len_mm' must be numeric.\n")
-        if (!is.numeric(df$max_len_mm)) msgs <- c(msgs, "❌ Error: 'max_len_mm' must be numeric.\n")
-        if (is.numeric(df$min_len_mm) && any(df$min_len_mm < 0)) msgs <- c(msgs, "❌ Error: 'min_len_mm' cannot be negative.\n")
+      if (!is.numeric(df$min_len_mm)) {
+        msgs <- c(
+          msgs,
+          "❌ Error: 'min_len_mm' must be numeric.\n"
+        )
+      }
+      
+      if (!is.numeric(df$max_len_mm)) {
+        msgs <- c(
+          msgs,
+          "❌ Error: 'max_len_mm' must be numeric.\n"
+        )
+      }
+      
+      if (
+        is.numeric(df$min_len_mm) &&
+        any(df$min_len_mm < 0, na.rm = TRUE)
+      ) {
+        msgs <- c(
+          msgs,
+          "❌ Error: 'min_len_mm' cannot be negative.\n"
+        )
       }
     }
   }
