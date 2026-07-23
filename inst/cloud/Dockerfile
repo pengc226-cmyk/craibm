@@ -40,35 +40,35 @@ RUN curl -sSL https://sdk.cloud.google.com | bash -s -- --disable-prompts --inst
 # R dependencies, installed before the package itself so that changing the
 # model source does not force them all to be rebuilt.
 RUN install2.r --error --skipinstalled \
+      Rcpp \
+      RcppArmadillo \
       shiny \
       bs4Dash \
       DT \
-      Rcpp \
-      RcppArmadillo \
       foreach \
       doParallel \
-      dplyr \
       data.table \
+      dplyr \
       tidyr \
       ggplot2 \
       scales \
       readr \
       readxl \
+      car \
+      lme4 \
+      FSA \
       stringr \
       purrr \
       shinyFiles \
+      fs \
       waiter \
       shinyjs \
+      callr \
+      lmeresampler \
+      ps \
       jsonlite \
       httr \
-      openssl \
-      ps \
-      FSA \
-      lme4 \
-      car \
-      lmeresampler \
-      fs \
-      callr
+      openssl
 
 COPY . /opt/craibm_src
 
