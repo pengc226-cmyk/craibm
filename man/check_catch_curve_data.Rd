@@ -26,3 +26,4 @@ A catch curve regresses log abundance on age along the
   or its bootstrap. The simulation itself can still run in that situation,
   but adult mortality has to be supplied directly instead of estimated.
 }
+\keyword{internal}

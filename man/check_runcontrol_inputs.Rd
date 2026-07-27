@@ -27,3 +27,4 @@ Validates Step 2 run-control inputs: number of iterations,
   fast-forward. Produces an errors/pass result plus an informational
   thread-usage message.
 }
+\keyword{internal}

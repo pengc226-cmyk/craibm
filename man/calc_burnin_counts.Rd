@@ -23,3 +23,4 @@ A dataframe with Group, Mean, and SD.
 \description{
 Calculates statistics for burn-in periods in simulation results.
 }
+\keyword{internal}

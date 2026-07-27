@@ -1,7 +1,15 @@
 Package: craibm
 Title: Individual-Based Model for Sportfish Population Simulation
-Version: 0.2.10
-Authors@R: person("Developer", "Name", email = "dev@example.com", role = c("aut", "cre"))
+Version: 0.3.3
+Authors@R: person(
+    given = "Peng",
+    family = "Chen",
+    email = "peng.chen@siu.edu",
+    role = c("aut", "cre","cph"),
+    comment = c(
+        Affiliation = "Center for Fisheries, Aquaculture, and Aquatic Sciences, Southern Illinois University Carbondale"
+    )
+    )
 Description: Shiny application for parameterizing and running individual-based
     models for sportfish populations with parallel batch simulation.
 License: MIT + file LICENSE

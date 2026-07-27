@@ -17,3 +17,4 @@ Long jobs outlive a single token. Polling calls this first so a
   temporary network outage followed by an expired token does not look like a
   permanent failure.
 }
+\keyword{internal}

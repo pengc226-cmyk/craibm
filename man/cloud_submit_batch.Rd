@@ -12,9 +12,9 @@ cloud_submit_batch(
   job_id,
   machine_type,
   task_type,
-  image = Sys.getenv("CRAIBM_CLOUD_IMAGE", unset = ""),
-  worker_service_account = auth$email,
-  max_run_seconds = 86400L
+  image = "ghcr.io/craibm/craibm:latest",
+  worker_service_account = NULL,
+  max_run_seconds = 1209600L
 )
 }
 \arguments{
@@ -39,7 +39,8 @@ Defaults to the account represented by the uploaded JSON key so the
 container and the submitting application use the same explicitly
 configured identity rather than the Compute Engine default account.}
 
-\item{max_run_seconds}{Upper bound on run time, after which Batch stops the job.}
+\item{max_run_seconds}{Upper bound on run time, in seconds. Defaults to
+14 days, which is Google Cloud Batch's own maximum job duration.}
 }
 \value{
 A list with the submitted job name.
@@ -49,3 +50,4 @@ Starts a single-task Batch job that runs the craibm container.
   The container reads its instructions from environment variables and takes
   everything else from the payload already in the bucket.
 }
+\keyword{internal}

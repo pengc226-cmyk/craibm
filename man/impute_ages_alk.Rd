@@ -33,3 +33,4 @@ Fish with a known age are used to build an age-length key, which
   length category becomes the key, and each unaged fish is assigned an age
   drawn from the key row matching its length.
 }
+\keyword{internal}

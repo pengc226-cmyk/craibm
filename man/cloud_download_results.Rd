@@ -22,3 +22,4 @@ A list with \code{pass}, a message and the destination folder.
 Retrieves the archive produced by the run and expands it into a
   local folder, from which the usual loading and plotting steps proceed.
 }
+\keyword{internal}

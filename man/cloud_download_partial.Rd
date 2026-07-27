@@ -22,3 +22,4 @@ A list with \code{pass}, a message and the number of files retrieved.
 When a run is stopped or a machine is lost, the results that had
   already been synchronised remain in the bucket. This collects them.
 }
+\keyword{internal}

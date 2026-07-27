@@ -9,3 +9,4 @@ check_results_data(dir_path)
 \description{
 Validates that a results directory contains expected files.
 }
+\keyword{internal}

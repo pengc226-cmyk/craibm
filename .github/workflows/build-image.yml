@@ -63,10 +63,13 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # The package exports only run_app(), so the compute helpers the cloud
+      # entry point calls have to be looked up inside the namespace. Attaching
+      # the package with library() no longer makes any of them visible.
       - name: Smoke-test the published package
         shell: bash
         run: |
           IMAGE="${REGISTRY}/${IMAGE_NAME}:latest"
           docker pull "${IMAGE}"
           docker run --rm --entrypoint Rscript "${IMAGE}" -e \
-            'library(craibm); stopifnot(is.function(run_selected_cpp), is.function(cloud_submit_batch), is.function(run_simulation_sizelimit_cpp))'
+            'ns <- asNamespace("craibm"); required <- c("run_selected_cpp", "cloud_submit_batch", "run_simulation_sizelimit_cpp", "run_oversubscription_test", "run_whole_scenario_job_shiny"); stopifnot(is.function(craibm::run_app), all(vapply(required, function(x) exists(x, envir = ns, mode = "function", inherits = FALSE), logical(1))))'

@@ -19,3 +19,4 @@ A list containing 'Theta_clean' (bootstrapped parameters) and 'Data' (original d
 \description{
 Fits the von Bertalanffy Growth Function (VBGF) using bootstrapping to estimate parameter uncertainty.
 }
+\keyword{internal}

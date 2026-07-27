@@ -19,3 +19,4 @@ Google machine type names end with the number of virtual CPUs,
   Shared-core types such as \code{e2-micro} carry no number and are treated
   as a single core.
 }
+\keyword{internal}

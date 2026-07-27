@@ -17,5 +17,6 @@ Collapses individual length-age records into the four-column
   summary the application expects for age-length key data: 'Age', 'n',
   'Length' (mean length at that age) and 'Lengthsd' (standard deviation of
   length at that age). Ages represented by a single fish are reported with a
-  standard deviation of zero.
+  standard deviation of NA.
 }
+\keyword{internal}

@@ -34,3 +34,4 @@ Worker function to run a single scenario (with multiple policies) in parallel.
   The C++ simulation functions are loaded automatically via \code{library(craibm)} since
   \code{miaov6s.cpp} is compiled into the package shared library at install time.
 }
+\keyword{internal}

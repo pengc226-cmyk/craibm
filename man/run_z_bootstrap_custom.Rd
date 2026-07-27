@@ -23,3 +23,4 @@ Numeric vector of bootstrapped Z estimates.
 \description{
 Wrapper function to estimate Z using catch curves or GLMs with bootstrapping.
 }
+\keyword{internal}

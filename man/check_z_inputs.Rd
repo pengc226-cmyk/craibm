@@ -9,3 +9,4 @@ check_z_inputs(growth_df, full, last, bg2)
 \description{
 Validates mortality estimation parameters.
 }
+\keyword{internal}

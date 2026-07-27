@@ -27,3 +27,4 @@ Confirms that everything needed to reach the user's own Google
   Cloud project has been supplied, and that the entries look plausible, so
   mistakes are caught before a job is queued and charged for.
 }
+\keyword{internal}

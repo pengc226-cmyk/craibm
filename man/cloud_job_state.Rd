@@ -23,3 +23,4 @@ Reports what Batch itself believes about the job. This is the
   authoritative signal for failure, as distinct from a job that is merely
   quiet.
 }
+\keyword{internal}

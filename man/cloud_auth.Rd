@@ -19,3 +19,4 @@ Exchanges a service-account key for a short-lived access token
   using the standard JWT bearer flow. The returned object records when the
   token expires so long-running jobs can refresh it.
 }
+\keyword{internal}

@@ -23,3 +23,4 @@ Progress is reported through a small file in the bucket. The
   file carries a timestamp so a job that has stopped writing can be told
   apart from one that is simply between updates.
 }
+\keyword{internal}

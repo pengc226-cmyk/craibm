@@ -9,3 +9,4 @@ check_global_inputs(inputs)
 \description{
 Validates all global simulation parameters.
 }
+\keyword{internal}

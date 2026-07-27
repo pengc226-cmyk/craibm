@@ -23,3 +23,4 @@ Confirms that the credentials work and that the bucket is
   reachable, so problems surface immediately rather than after a job has been
   queued.
 }
+\keyword{internal}

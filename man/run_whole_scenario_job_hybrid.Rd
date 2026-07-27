@@ -19,3 +19,4 @@ run_whole_scenario_job_hybrid(
 Backward-compatible wrapper. The current C++ engines use CPU
   std::threads for policy-combo parallelism; no CUDA/OpenCL code is invoked.
 }
+\keyword{internal}

@@ -13,7 +13,10 @@
 # ==============================================================================
 
 suppressWarnings(suppressMessages({
-  library(craibm)
+  # craibm exports only run_app(). The compute helpers this script needs are
+  # internal, so the namespace is loaded and they are reached with ':::'
+  # rather than attached with library().
+  loadNamespace("craibm")
   library(jsonlite)
 }))
 
@@ -126,7 +129,7 @@ if (identical(TASK_TYPE, "validation")) {
 
   t0 <- Sys.time()
   result <- tryCatch(
-    run_selected_cpp(all_params, cpp_scen, cpp_pol, rep_id = 1L),
+    craibm:::run_selected_cpp(all_params, cpp_scen, cpp_pol, rep_id = 1L),
     error = function(e) e
   )
   if (inherits(result, "error")) fail(paste("Validation run failed:", conditionMessage(result)))
@@ -165,19 +168,19 @@ if (identical(TASK_TYPE, "perfcheck")) {
   if (is.na(logical_cores)) logical_cores <- 1L
 
   run_one <- function(rep_id) {
-    run_selected_cpp(all_params, cpp_scen, cpp_pol, rep_id = rep_id)
+    craibm:::run_selected_cpp(all_params, cpp_scen, cpp_pol, rep_id = rep_id)
     invisible(NULL)
   }
 
   setup_cluster <- function(cl) {
-    parallel::clusterEvalQ(cl, suppressMessages(library(craibm)))
+    parallel::clusterEvalQ(cl, suppressMessages(loadNamespace("craibm")))
     parallel::clusterExport(cl, varlist = c("all_params", "cpp_scen", "cpp_pol"),
                             envir = environment())
   }
 
   t0 <- Sys.time()
   res <- tryCatch(
-    run_oversubscription_test(
+    craibm:::run_oversubscription_test(
       run_one_fn        = run_one,
       n_cores           = probe,
       requested_workers = requested,
@@ -294,7 +297,7 @@ cl <- parallel::makeCluster(n_workers)
 
 ok <- tryCatch({
   parallel::clusterEvalQ(cl, suppressMessages({
-    library(craibm)
+    loadNamespace("craibm")
     library(dplyr)
     library(data.table)
   }))
@@ -314,7 +317,7 @@ ok <- tryCatch({
         burnin_rm_val = burnin_rm
       )
       task_error <- tryCatch({
-        run_whole_scenario_job_shiny(
+        craibm:::run_whole_scenario_job_shiny(
           task_info           = task_info,
           scenarios_df        = scenarios_df,
           policy_combos_logic = policy_logic,

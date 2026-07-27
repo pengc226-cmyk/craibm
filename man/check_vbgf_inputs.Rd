@@ -9,3 +9,4 @@ check_vbgf_inputs(file_obj, df, boot_b)
 \description{
 Validates growth data upload and bootstrap settings.
 }
+\keyword{internal}

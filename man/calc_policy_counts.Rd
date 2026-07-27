@@ -21,3 +21,4 @@ A dataframe with Group, Mean, and SD.
 \description{
 Calculates statistics for policy periods in simulation results.
 }
+\keyword{internal}

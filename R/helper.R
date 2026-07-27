@@ -13,7 +13,7 @@
 #' @description Parses a comma-separated string into a numeric vector. Handles fullwidth commas.
 #' @param x Character string of comma-separated numbers.
 #' @return Numeric vector (may be length 0).
-#' @export
+#' @keywords internal
 parse_num_vec <- function(x) {
   if (is.null(x) || length(x) == 0 || !nzchar(x)) return(numeric())
   x <- gsub("\uFF0C", ",", x)
@@ -33,7 +33,7 @@ parse_num_vec <- function(x) {
 #' @param B Integer. The number of bootstrap replicates to run. Default is 1000.
 #' @param phi_obs Numeric. The observation error parameter. Default is 0.1.
 #' @return A list containing 'Theta_clean' (bootstrapped parameters) and 'Data' (original data with fits).
-#' @export
+#' @keywords internal
 run_vbgf_bootstrap_full <- function(wd, B = 1000, phi_obs = 0.1, seed = NULL) {
   
   # The bootstrap resamples rows at random, so a seed is recorded to make the
@@ -214,7 +214,7 @@ zestimate_shiny <- function(age, number, full, last, BG2, method) {
 #' @param last Integer. Maximum age.
 #' @param method Character. "lr", "wlr", "pois", or "ripois".
 #' @return Numeric vector of bootstrapped Z estimates.
-#' @export
+#' @keywords internal
 run_z_bootstrap_custom <- function(raw_data, BG2, full, last, method, seed = NULL) {
   stopifnot(is.data.frame(raw_data))
   if (!all(c("Age","n") %in% names(raw_data))) {
@@ -408,7 +408,7 @@ run_z_bootstrap_custom <- function(raw_data, BG2, full, last, method, seed = NUL
 #' @param out_dir_base String. Base output directory.
 #' @param cpp_abs_path String. Deprecated - no longer used. Kept for call-site compatibility only.
 #' @return Boolean TRUE if successful.
-#' @export
+#' @keywords internal
 run_whole_scenario_job_shiny <- function(task_info, 
                                          scenarios_df, 
                                          policy_combos_logic, 
@@ -557,7 +557,7 @@ run_whole_scenario_job_shiny <- function(task_info,
 #' @param t_blue Integer. Start year for filtering (e.g., stable year start).
 #' @param t_red Integer. End year for filtering.
 #' @return A dataframe with Group, Mean, and SD.
-#' @export
+#' @keywords internal
 calc_burnin_counts <- function(
     file_list,
     group_name,
@@ -624,7 +624,7 @@ calc_burnin_counts <- function(
 #' @param var_name String. Variable name.
 #' @param t_red Integer. Start year for policy filtering.
 #' @return A dataframe with Group, Mean, and SD.
-#' @export
+#' @keywords internal
 calc_policy_counts <- function(
     file_list,
     group_name,
@@ -703,7 +703,7 @@ calc_policy_counts <- function(
 #'     \item{detection_method}{Character. Which layer succeeded.}
 #'     \item{detection_details}{Character. Raw detection output for debugging.}
 #'   }
-#' @export
+#' @keywords internal
 detect_gpu_r <- function() {
   
   # Initialize result structure
@@ -1491,7 +1491,7 @@ detect_gpu_r <- function() {
 # ==============================================================================
 # Policy-combo parallel worker (backward-compatible name)
 # ============================================================================== 
-#' @export
+#' @keywords internal
 run_whole_scenario_job_gpu <- function(task_info,
                                        scenarios_df,
                                        policy_combos_logic,
@@ -1519,7 +1519,7 @@ run_whole_scenario_job_gpu <- function(task_info,
 #' @title Run Whole Scenario Job with Internal Policy-Combo Parallelism
 #' @description Backward-compatible wrapper. The current C++ engines use CPU
 #'   std::threads for policy-combo parallelism; no CUDA/OpenCL code is invoked.
-#' @export
+#' @keywords internal
 run_whole_scenario_job_hybrid <- function(task_info,
                                           scenarios_df,
                                           policy_combos_logic,
@@ -1574,7 +1574,7 @@ run_whole_scenario_job_hybrid <- function(task_info,
 #'     \item{limiting_factor}{"length" or "age" — which bound is active.}
 #'     \item{fastest_fish_idx}{Which bootstrap row grows fastest.}
 #'   }
-#' @export
+#' @keywords internal
 compute_T_safe <- function(theta_clean,
                            juv_onlyM_len,
                            min_adult_age,
@@ -1681,7 +1681,7 @@ compute_T_safe <- function(theta_clean,
 #' @description Cross-platform total and available system RAM via the ps package.
 #' @return A list with total_mb, available_mb, and used_percent. Falls back to a
 #'   conservative 8 GB total / 4 GB available if ps is unavailable.
-#' @export
+#' @keywords internal
 get_system_memory_mb <- function() {
   if (!requireNamespace("ps", quietly = TRUE)) {
     return(list(
@@ -1735,7 +1735,7 @@ get_system_memory_mb <- function() {
 #' @param mem_abort_frac Fraction of TOTAL physical RAM used as the hard memory
 #'   limit. Default is 0.95.
 #' @return A named list describing the benchmark result (see $status).
-#' @export
+#' @keywords internal
 run_oversubscription_test <- function(run_one_fn,
                                       n_cores,
                                       requested_workers,
@@ -2236,7 +2236,7 @@ run_oversubscription_test <- function(run_one_fn,
 #'   had to be discarded (\code{n_dropped}), the length-category width used
 #'   (\code{bin_width}), the seed used (\code{seed}), and the age-length key
 #'   itself (\code{alk}).
-#' @export
+#' @keywords internal
 impute_ages_alk <- function(df, bin_width = NULL, seed = NULL) {
   
   if (!requireNamespace("FSA", quietly = TRUE)) {
@@ -2364,10 +2364,10 @@ impute_ages_alk <- function(df, bin_width = NULL, seed = NULL) {
 #'   summary the application expects for age-length key data: 'Age', 'n',
 #'   'Length' (mean length at that age) and 'Lengthsd' (standard deviation of
 #'   length at that age). Ages represented by a single fish are reported with a
-#'   standard deviation of zero.
+#'   standard deviation of NA.
 #' @param df A data frame with numeric 'Length' and 'Age' columns.
 #' @return A data frame with columns Age, n, Length and Lengthsd.
-#' @export
+#' @keywords internal
 build_alk_summary <- function(df) {
   
   if (!all(c("Length", "Age") %in% names(df))) {
@@ -2392,13 +2392,91 @@ build_alk_summary <- function(df) {
     Length = vapply(ages, function(a) mean(d$Length[d$Age == a]), numeric(1)),
     Lengthsd = vapply(ages, function(a) {
       v <- d$Length[d$Age == a]
-      if (length(v) < 2L) 0 else stats::sd(v)
+      
+      # A within-age SD cannot be calculated from only one fish.
+      if (length(v) < 2L) {
+        NA_real_
+      } else {
+        stats::sd(v)
+      }
     }, numeric(1))
   )
   
   out$Length   <- round(out$Length, 2)
   out$Lengthsd <- round(out$Lengthsd, 2)
   rownames(out) <- NULL
+  out
+}
+
+
+#' @title Prepare Automatically Generated ALK Data for the Model
+#' @description Replaces undefined within-age standard deviations in an
+#'   automatically generated ALK. The nearest preceding age class with a
+#'   valid SD is preferred. If none exists, the next valid age class is used.
+#' @param alk A data frame containing Age, n, Length and Lengthsd.
+#' @return A model-ready ALK data frame with no missing Lengthsd values.
+#' @keywords internal
+fill_alk_sd_for_model <- function(alk) {
+  
+  required_columns <- c("Age", "n", "Length", "Lengthsd")
+  
+  if (!all(required_columns %in% names(alk))) {
+    stop(
+      "ALK data must contain Age, n, Length and Lengthsd."
+    )
+  }
+  
+  out <- as.data.frame(alk)
+  
+  out$Age <- suppressWarnings(as.numeric(out$Age))
+  out$Lengthsd <- suppressWarnings(as.numeric(out$Lengthsd))
+  
+  missing_idx <- which(
+    !is.finite(out$Lengthsd)
+  )
+  
+  # Nothing needs to be replaced.
+  if (length(missing_idx) == 0L) {
+    return(out)
+  }
+  
+  # Only SD values calculated from at least two fish can be donors.
+  valid_idx <- which(
+    is.finite(out$Lengthsd) &
+      out$Lengthsd >= 0
+  )
+  
+  if (length(valid_idx) == 0L) {
+    stop(
+      paste0(
+        "Every age class contains only one fish, so no within-age ",
+        "standard deviation is available. Please upload your own ALK data."
+      )
+    )
+  }
+  
+  for (i in missing_idx) {
+    
+    # Prefer the nearest valid row from a younger age.
+    previous_idx <- valid_idx[valid_idx < i]
+    
+    if (length(previous_idx) > 0L) {
+      
+      donor_idx <- max(previous_idx)
+      
+    } else {
+      
+      # For the youngest row, use the next available older age.
+      following_idx <- valid_idx[valid_idx > i]
+      donor_idx <- min(following_idx)
+    }
+    
+    out$Lengthsd[i] <- out$Lengthsd[donor_idx]
+  }
+  
+  out$Lengthsd <- round(out$Lengthsd, 2)
+  rownames(out) <- NULL
+  
   out
 }
 
@@ -2426,7 +2504,7 @@ build_alk_summary <- function(df) {
 #' @param cpp_pol_df Data frame of policy combinations.
 #' @param rep_id Replicate index, starting at 1. Used to derive the seed.
 #' @return The simulation result returned by the selected compiled routine.
-#' @export
+#' @keywords internal
 run_selected_cpp <- function(all_params, cpp_scen, cpp_pol_df, rep_id = 1L) {
   is_age_mode <- identical(all_params$other$f_age_mode, "age")
   engine <- if (!is.null(all_params$execution$engine)) all_params$execution$engine else "legacy"

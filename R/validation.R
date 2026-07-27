@@ -10,7 +10,7 @@ NULL
 
 #' @title Parse and Check Numeric Vector
 #' @description Parses a string to numeric vector with bounds checking.
-#' @export
+#' @keywords internal
 parse_and_check_vec <- function(str_val, name, min_val = -Inf, max_val = Inf, len_must_be = NULL) {
   if (is.null(str_val) || !nzchar(str_val)) {
     return(list(valid = FALSE, msg = paste0("❌ Error: [", name, "] cannot be empty.\n")))
@@ -44,7 +44,7 @@ parse_and_check_vec <- function(str_val, name, min_val = -Inf, max_val = Inf, le
 
 #' @title Check Numeric Value
 #' @description Validates a numeric input against bounds.
-#' @export
+#' @keywords internal
 check_num <- function(val, name, min_val = -Inf, max_val = Inf, is_int = FALSE) {
   if (is.null(val) || length(val) == 0 || is.na(val)) {
     return(paste0("❌ Error: [", name, "] is empty or not a number.\n"))
@@ -63,7 +63,7 @@ check_num <- function(val, name, min_val = -Inf, max_val = Inf, is_int = FALSE) 
 
 #' @title Check CSV Extension
 #' @description Validates that the file has a .csv extension.
-#' @export
+#' @keywords internal
 check_csv_ext <- function(filename) {
   if (is.null(filename)) return("❌ Error: No file uploaded.\n")
   if (!grepl("\\.csv$", filename, ignore.case = TRUE)) {
@@ -76,19 +76,17 @@ check_csv_ext <- function(filename) {
 
 #' @title Check VBGF Inputs
 #' @description Validates growth data upload and bootstrap settings.
-#' @export
+#' @keywords internal
 check_vbgf_inputs <- function(file_obj, df, boot_b) {
   msgs <- c()
-  
   
   ext_err <- check_csv_ext(file_obj$name)
   if (!is.null(ext_err)) return(list(pass = FALSE, msg = ext_err))
   
+  if (is.null(df) || nrow(df) == 0) {
+    return(list(pass = FALSE, msg = "❌ Error: File is empty.\n"))
+  }
   
-  if (is.null(df) || nrow(df) == 0) return(list(pass = FALSE, msg = "❌ Error: File is empty.\n"))
-  
-  
-  # ： 2 , Age Length
   if (ncol(df) != 2) {
     return(list(pass = FALSE, msg = paste0("❌ Error: File must have exactly 2 columns (Age, Length).\nYour file has ", ncol(df), " columns.\n")))
   }
@@ -99,10 +97,18 @@ check_vbgf_inputs <- function(file_obj, df, boot_b) {
   }
   
   
+  valid_ages <- unique(na.omit(df$Age))
+  if (length(valid_ages) <= 1) {
+    return(list(pass = FALSE, msg = "❌ Error: All fish have the same age (or no valid age). Need at least 2 distinct ages to fit a growth curve.\n"))
+  }
+  
+  if (nrow(df) < 4) {
+    return(list(pass = FALSE, msg = paste0("❌ Error: too few input data rows to fit the growth model.\nYour file has ", nrow(df), " rows.\n")))
+  }
+  
   if (!is.numeric(df$Length)) msgs <- c(msgs, "❌ Error: 'Length' column contains non-numbers.\n")
   if (!is.numeric(df$Age))    msgs <- c(msgs, "❌ Error: 'Age' column contains non-numbers.\n")
   
-  # 5. Bootstrap
   err <- check_num(boot_b, "Bootstrap Replicates", min_val = 100, is_int = TRUE)
   if (!is.null(err)) msgs <- c(msgs, err)
   
@@ -115,35 +121,281 @@ check_vbgf_inputs <- function(file_obj, df, boot_b) {
 
 #' @title Check Z Estimation Inputs
 #' @description Validates mortality estimation parameters.
-#' @export
+#' @keywords internal
 check_z_inputs <- function(growth_df, full, last, bg2) {
-  msgs <- c()
   
-  if (is.null(growth_df)) return(list(pass = FALSE, msg = "❌ Error: Please submit ALK data first in Step 1: Parameters 1\n"))
-  if (is.na(full)) {
-    msgs <- c(msgs, "❌ Error: [Transition Age is missing.\n Please go to the 'Other' tab -> 'Life History' box to set it.\n")
+  msgs <- character()
+  
+  # Keep the original argument name for backward compatibility,
+  # but this object is the active age-length key.
+  alk_df <- growth_df
+  
+  # ------------------------------------------------------------------
+  # 1. Check that ALK data exist
+  # ------------------------------------------------------------------
+  if (
+    is.null(alk_df) ||
+    !is.data.frame(alk_df) ||
+    nrow(alk_df) == 0L
+  ) {
+    return(
+      list(
+        pass = FALSE,
+        msg = paste0(
+          "❌ Error: Please determine ALK data first in ",
+          "Step 1a: Parameters 1.\n"
+        )
+      )
+    )
+  }
+  
+  if (!"Age" %in% names(alk_df)) {
+    return(
+      list(
+        pass = FALSE,
+        msg = "❌ Error: ALK data must contain an 'Age' column.\n"
+      )
+    )
+  }
+  
+  # ------------------------------------------------------------------
+  # 2. Determine the usable age classes in the ALK
+  # ------------------------------------------------------------------
+  alk_age <- suppressWarnings(
+    as.numeric(alk_df$Age)
+  )
+  
+  # An age class with n = 0 cannot contribute to the catch curve.
+  if ("n" %in% names(alk_df)) {
+    
+    alk_n <- suppressWarnings(
+      as.numeric(alk_df$n)
+    )
+    
+    usable_age <- (
+      is.finite(alk_age) &
+        is.finite(alk_n) &
+        alk_n > 0
+    )
+    
   } else {
-    msgs <- c(msgs, check_num(full, "Transition Age", min_val = 0))
+    
+    usable_age <- is.finite(alk_age)
   }
   
-  msgs <- c(msgs, check_num(last, "Max Age", min_val = 1))
-  msgs <- c(msgs, check_num(bg2, "Bootstrap Replicates", min_val = 100, is_int = TRUE))
+  available_ages <- sort(
+    unique(
+      alk_age[usable_age]
+    )
+  )
   
-  if (is.numeric(full) && is.numeric(last) && !is.na(full) && !is.na(last) && last <= full) {
-    msgs <- c(msgs, paste0(
-      "❌ Error: Max Age (", last, ") must be strictly greater than Transition Age(", full, ").\n",
-      "Please adjust 'Transition Age' in the 'Other' tab or 'Max Age' here.\n"
-    ))
+  if (length(available_ages) == 0L) {
+    return(
+      list(
+        pass = FALSE,
+        msg = paste0(
+          "❌ Error: The ALK contains no usable age classes ",
+          "with fish counts greater than zero.\n"
+        )
+      )
+    )
   }
   
-  pass <- length(msgs) == 0
-  return(list(pass = pass, msg = ifelse(pass, "✅ Mortality (Z) Check Passed!\n", paste(msgs, collapse = ""))))
+  available_age_text <- paste(
+    available_ages,
+    collapse = ", "
+  )
+  
+  maximum_alk_age <- max(available_ages)
+  
+  # ------------------------------------------------------------------
+  # 3. Catch curve requires at least three distinct age classes
+  # ------------------------------------------------------------------
+  if (length(available_ages) < 3L) {
+    return(
+      list(
+        pass = FALSE,
+        msg = paste0(
+          "❌ Error: The current ALK contains only ",
+          length(available_ages),
+          " usable age class(es): ",
+          available_age_text,
+          ".\n",
+          "At least 3 age classes are required to estimate Z ",
+          "from a catch curve.\n",
+          "Please switch off 'M comes from Catch curve estimation' ",
+          "and enter a Fixed Adult Annual M instead.\n"
+        )
+      )
+    )
+  }
+  
+  # ------------------------------------------------------------------
+  # 4. Basic numeric checks
+  # ------------------------------------------------------------------
+  if (
+    length(full) == 0L ||
+    is.na(full)
+  ) {
+    
+    msgs <- c(
+      msgs,
+      paste0(
+        "❌ Error: Transition Age is missing.\n",
+        "Please go to the 'Other' tab -> 'Life History' box ",
+        "to set it.\n"
+      )
+    )
+    
+  } else {
+    
+    msgs <- c(
+      msgs,
+      check_num(
+        full,
+        "Transition Age",
+        min_val = 0
+      )
+    )
+  }
+  
+  msgs <- c(
+    msgs,
+    check_num(
+      last,
+      "Max Age",
+      min_val = 1
+    )
+  )
+  
+  msgs <- c(
+    msgs,
+    check_num(
+      bg2,
+      "Bootstrap Replicates",
+      min_val = 100,
+      is_int = TRUE
+    )
+  )
+  
+  full_is_valid <- (
+    is.numeric(full) &&
+      length(full) == 1L &&
+      is.finite(full)
+  )
+  
+  last_is_valid <- (
+    is.numeric(last) &&
+      length(last) == 1L &&
+      is.finite(last)
+  )
+  
+  # ------------------------------------------------------------------
+  # 5. Transition Age must be represented in the current ALK
+  # ------------------------------------------------------------------
+  if (
+    full_is_valid &&
+    !full %in% available_ages
+  ) {
+    
+    msgs <- c(
+      msgs,
+      paste0(
+        "❌ Error: Transition Age (",
+        full,
+        ") is not represented in the current ALK.\n",
+        "Available age classes are: ",
+        available_age_text,
+        ".\n"
+      )
+    )
+  }
+  
+  # ------------------------------------------------------------------
+  # 6. Max Age must match an age class in the current ALK
+  # ------------------------------------------------------------------
+  if (
+    last_is_valid &&
+    last > maximum_alk_age
+  ) {
+    
+    msgs <- c(
+      msgs,
+      paste0(
+        "❌ Error: Max Age (",
+        last,
+        ") exceeds the oldest age in the current ALK (",
+        maximum_alk_age,
+        ").\n",
+        "Please select a Max Age from the available ALK age classes.\n"
+      )
+    )
+    
+  } else if (
+    last_is_valid &&
+    !last %in% available_ages
+  ) {
+    
+    msgs <- c(
+      msgs,
+      paste0(
+        "❌ Error: Max Age (",
+        last,
+        ") is not represented in the current ALK.\n",
+        "Available age classes are: ",
+        available_age_text,
+        ".\n"
+      )
+    )
+  }
+  
+  # ------------------------------------------------------------------
+  # 7. Max Age must be later than Transition Age
+  # ------------------------------------------------------------------
+  if (
+    full_is_valid &&
+    last_is_valid &&
+    last <= full
+  ) {
+    
+    msgs <- c(
+      msgs,
+      paste0(
+        "❌ Error: Max Age (",
+        last,
+        ") must be strictly greater than Transition Age (",
+        full,
+        ").\n",
+        "Please adjust 'Transition Age' in the 'Other' tab ",
+        "or select a later Max Age here.\n"
+      )
+    )
+  }
+  
+  pass <- length(msgs) == 0L
+  
+  list(
+    pass = pass,
+    msg = if (pass) {
+      paste0(
+        "✅ Mortality (Z) Check Passed!\n",
+        "Available ALK ages: ",
+        available_age_text,
+        ".\n"
+      )
+    } else {
+      paste(
+        msgs,
+        collapse = ""
+      )
+    }
+  )
 }
 
 
 #' @title Check ALK Inputs
 #' @description Validates age-length key data upload.
-#' @export
+#' @keywords internal
 check_alk_inputs <- function(file_obj, df) {
   
   ext_err <- check_csv_ext(file_obj$name)
@@ -173,7 +425,7 @@ check_alk_inputs <- function(file_obj, df) {
 
 #' @title Check Bootstrap Outcomes
 #' @description Validates bootstrap results for sufficient clean runs.
-#' @export
+#' @keywords internal
 check_boot_outcomes <- function(theta_df, expected_runs) {
   msgs <- c()
   pass <- TRUE
@@ -215,7 +467,7 @@ check_boot_outcomes <- function(theta_df, expected_runs) {
 
 #' @title Check Global Parameters
 #' @description Validates all global simulation parameters.
-#' @export
+#' @keywords internal
 check_global_inputs <- function(inputs) {
   msgs <- c()
   
@@ -236,12 +488,175 @@ check_global_inputs <- function(inputs) {
   if(!is.null(err)) msgs <- c(msgs, err)
   
   # --- 3. Density Dependent ---
-  if (isTRUE(inputs$use_dd_survival)) {
+  master_dd <- isTRUE(inputs$use_dd_effects)
+  
+  survival_dd_on <- master_dd &&
+    isTRUE(inputs$use_dd_survival)
+  
+  adult_growth_dd_on <- master_dd &&
+    isTRUE(inputs$use_dd_growth_adult)
+  
+  juvenile_growth_dd_on <- master_dd &&
+    isTRUE(inputs$use_dd_growth_juv)
+  
+  
+  # ------------------------------------------------------------
+  # Density-dependent survival
+  # ------------------------------------------------------------
+  if (survival_dd_on) {
     
-    msgs <- c(msgs, check_num(inputs$surv_a, "Survival a"))
-    msgs <- c(msgs, check_num(inputs$surv_b, "Survival b"))
-    msgs <- c(msgs, check_num(inputs$surv_d1, "Survival d1 (density)", min_val = 0))
-    msgs <- c(msgs, check_num(inputs$surv_d2, "Survival d2 (density)", min_val = 0))
+    survival_input_msgs <- c(
+      check_num(
+        inputs$surv_a,
+        "Survival a (density)"
+      ),
+      check_num(
+        inputs$surv_b,
+        "Survival b (density)"
+      ),
+      check_num(
+        inputs$surv_c,
+        "Survival c (density)"
+      ),
+      check_num(
+        inputs$surv_d1,
+        "Survival d1 (density)"
+      ),
+      check_num(
+        inputs$surv_d2,
+        "Survival d2 (density)"
+      )
+    )
+    
+    msgs <- c(
+      msgs,
+      survival_input_msgs
+    )
+    
+    # Only evaluate the curve after all five inputs have passed
+    # the missing/non-numeric checks.
+    if (length(survival_input_msgs) == 0L) {
+      
+      survival_curve_check <- check_density_response_curve(
+        a = inputs$surv_a,
+        b = inputs$surv_b,
+        c = inputs$surv_c,
+        
+        # Juvenile and adult reference densities are both checked.
+        d = c(
+          inputs$surv_d1,
+          inputs$surv_d2
+        ),
+        
+        name = "Density-dependent survival",
+        type = "mortality"
+      )
+      
+      if (!survival_curve_check$pass) {
+        msgs <- c(
+          msgs,
+          survival_curve_check$msg
+        )
+      }
+    }
+  }
+  
+  # ------------------------------------------------------------
+  # Density-dependent adult growth
+  # ------------------------------------------------------------
+  if (adult_growth_dd_on) {
+    
+    adult_growth_input_msgs <- c(
+      check_num(
+        inputs$g1_a,
+        "Adult growth a (density)"
+      ),
+      check_num(
+        inputs$g1_b,
+        "Adult growth b (density)"
+      ),
+      check_num(
+        inputs$g1_c,
+        "Adult growth c (density)"
+      ),
+      check_num(
+        inputs$g1_d,
+        "Adult growth d (density)"
+      )
+    )
+    
+    msgs <- c(
+      msgs,
+      adult_growth_input_msgs
+    )
+    
+    if (length(adult_growth_input_msgs) == 0L) {
+      
+      adult_growth_curve_check <- check_density_response_curve(
+        a = inputs$g1_a,
+        b = inputs$g1_b,
+        c = inputs$g1_c,
+        d = inputs$g1_d,
+        name = "Adult density-dependent growth",
+        type = "growth"
+      )
+      
+      if (!adult_growth_curve_check$pass) {
+        msgs <- c(
+          msgs,
+          adult_growth_curve_check$msg
+        )
+      }
+    }
+  }
+  
+  # ------------------------------------------------------------
+  # Density-dependent juvenile growth
+  # ------------------------------------------------------------
+  if (juvenile_growth_dd_on) {
+    
+    juvenile_growth_input_msgs <- c(
+      check_num(
+        inputs$g2_a,
+        "Juvenile growth a (density)"
+      ),
+      check_num(
+        inputs$g2_b,
+        "Juvenile growth b (density)"
+      ),
+      check_num(
+        inputs$g2_c,
+        "Juvenile growth c (density)"
+      ),
+      check_num(
+        inputs$g2_d,
+        "Juvenile growth d (density)"
+      )
+    )
+    
+    msgs <- c(
+      msgs,
+      juvenile_growth_input_msgs
+    )
+    
+    if (length(juvenile_growth_input_msgs) == 0L) {
+      
+      juvenile_growth_curve_check <- check_density_response_curve(
+        a = inputs$g2_a,
+        b = inputs$g2_b,
+        c = inputs$g2_c,
+        d = inputs$g2_d,
+        name = "Juvenile density-dependent growth",
+        type = "growth"
+      )
+      
+      if (!juvenile_growth_curve_check$pass) {
+        msgs <- c(
+          msgs,
+          juvenile_growth_curve_check$msg
+        )
+      }
+    }
   }
   
   # --- 4. Harvest ---
@@ -285,9 +700,12 @@ check_global_inputs <- function(inputs) {
   msgs <- c(msgs, check_num(inputs$psd_preferred, "PSD Preferred", min_val = 0))
   msgs <- c(msgs, check_num(inputs$psd_memorable, "PSD Memorable", min_val = 0))
   msgs <- c(msgs, check_num(inputs$psd_trophy, "PSD Trophy", min_val = 0))
-  if (is.numeric(inputs$psd_stock) && is.numeric(inputs$psd_quality) &&
-      is.numeric(inputs$psd_preferred) && is.numeric(inputs$psd_memorable) &&
-      is.numeric(inputs$psd_trophy)) {
+  .psd_usable <- function(v) {
+    is.numeric(v) && length(v) == 1L && !is.na(v)
+  }
+  if (.psd_usable(inputs$psd_stock) && .psd_usable(inputs$psd_quality) &&
+      .psd_usable(inputs$psd_preferred) && .psd_usable(inputs$psd_memorable) &&
+      .psd_usable(inputs$psd_trophy)) {
     
     
     if (inputs$psd_stock >= inputs$psd_quality) {
@@ -338,7 +756,7 @@ check_global_inputs <- function(inputs) {
 #'   logical_cores (int, from parallel::detectCores()).
 #' @return list(pass, msg, info_msg) where info_msg describes thread usage
 #'   (either a simple cores line, or an oversubscription warning).
-#' @export
+#' @keywords internal
 check_runcontrol_inputs <- function(inputs) {
   msgs <- c()
   
@@ -418,7 +836,7 @@ check_runcontrol_inputs <- function(inputs) {
   # count is used instead.
   logical_cores <- inputs$logical_cores
   if (is.null(logical_cores) || is.na(logical_cores) || logical_cores < 1) logical_cores <- 4L
-
+  
   cores_source <- "this machine"
   if (isTRUE(inputs$use_cloud)) {
     cloud_cores <- parse_machine_type_cores(inputs$cloud_machine_type)
@@ -431,15 +849,15 @@ check_runcontrol_inputs <- function(inputs) {
       cores_source <- NA_character_
     }
   }
-
+  
   layer1 <- max(1L, as.integer(inputs$n_cores))
   layer2 <- policy_threads
   layer3 <- omp_threads
   total_threads <- layer1 * layer2 * layer3
-
+  
   # How many layers are actually engaged (>1 thread)?
   active_layers <- sum(c(layer1 > 1, layer2 > 1, layer3 > 1))
-
+  
   if (is.na(cores_source)) {
     info_msg <- paste0(
       "\u2139\ufe0f Cloud run: ", layer1, " replicate worker(s) \u00d7 ",
@@ -457,7 +875,7 @@ check_runcontrol_inputs <- function(inputs) {
                 total_threads = total_threads, logical_cores = NA_integer_,
                 oversubscribed = NA))
   }
-
+  
   over <- total_threads > logical_cores
   ratio <- total_threads / logical_cores
   
@@ -512,7 +930,7 @@ check_runcontrol_inputs <- function(inputs) {
 
 #' @title Check Experiment Design Inputs
 #' @description Validates experiment design CSV and vectors.
-#' @export
+#' @keywords internal
 check_design_inputs <- function(file_obj, df, esd_str, pae_str, rm_str, breaks_str, probs_str, comp_mode) {
   msgs <- c()
   
@@ -634,7 +1052,7 @@ check_design_inputs <- function(file_obj, df, esd_str, pae_str, rm_str, breaks_s
 
 #' @title Check Results Directory
 #' @description Validates that a results directory contains expected files.
-#' @export
+#' @keywords internal
 check_results_data <- function(dir_path) {
   
   if (!dir.exists(dir_path)) {
@@ -672,7 +1090,7 @@ check_results_data <- function(dir_path) {
 #' @param min_ages Minimum number of usable age classes. Defaults to 3, which
 #'   leaves one residual degree of freedom for the regression.
 #' @return A list with pass, msg and n_ages.
-#' @export
+#' @keywords internal
 check_catch_curve_data <- function(alk_df, full, last, min_ages = 3L) {
   
   if (is.null(alk_df) || !is.data.frame(alk_df) || nrow(alk_df) == 0L) {
@@ -730,15 +1148,15 @@ check_catch_curve_data <- function(alk_df, full, last, min_ages = 3L) {
 #'   as a single core.
 #' @param machine_type A machine type string.
 #' @return The number of virtual CPUs, or \code{NA_integer_} if it cannot be read.
-#' @export
+#' @keywords internal
 parse_machine_type_cores <- function(machine_type) {
   if (is.null(machine_type) || !nzchar(as.character(machine_type))) {
     return(NA_integer_)
   }
   mt <- trimws(tolower(as.character(machine_type)))
-
+  
   if (grepl("^(e2|f1|g1)-(micro|small|medium)$", mt)) return(1L)
-
+  
   # Custom machine types end in both vCPU and memory, for example
   # n2-custom-8-32768. The vCPU count is the number after "custom", not the
   # final memory value.
@@ -748,10 +1166,10 @@ parse_machine_type_cores <- function(machine_type) {
     ))
     if (!is.na(n) && n >= 1L) return(n)
   }
-
+  
   m <- regmatches(mt, regexpr("[0-9]+$", mt))
   if (length(m) == 0L || !nzchar(m)) return(NA_integer_)
-
+  
   n <- suppressWarnings(as.integer(m))
   if (is.na(n) || n < 1L) return(NA_integer_)
   n
@@ -769,19 +1187,19 @@ parse_machine_type_cores <- function(machine_type) {
 #' @param machine_type Machine type string.
 #' @param image Public GHCR container image, including a tag or digest.
 #' @return A list with \code{pass} and a message.
-#' @export
+#' @keywords internal
 check_cloud_inputs <- function(key_path, project, region, bucket, machine_type,
                                image) {
-
+  
   msgs <- character(0)
   blank <- function(x) is.null(x) || !nzchar(trimws(as.character(x)))
-
+  
   if (blank(key_path)) {
     msgs <- c(msgs, "\u274c Upload a Google Cloud service-account key (.json).\n")
   } else if (!file.exists(key_path)) {
     msgs <- c(msgs, "\u274c The service-account key file could not be found.\n")
   }
-
+  
   if (blank(project)) {
     msgs <- c(msgs, "\u274c Enter your Google Cloud project ID.\n")
   } else if (!grepl("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", trimws(tolower(project)))) {
@@ -789,7 +1207,7 @@ check_cloud_inputs <- function(key_path, project, region, bucket, machine_type,
       "\u274c '", project, "' does not look like a project ID. ",
       "Project IDs are 6-30 characters, lower case, and may contain digits and hyphens.\n"))
   }
-
+  
   if (blank(region)) {
     msgs <- c(msgs, "\u274c Enter the region to run in, for example us-central1.\n")
   } else if (!grepl("^[a-z]+-[a-z]+[0-9]$", trimws(tolower(region)))) {
@@ -797,7 +1215,7 @@ check_cloud_inputs <- function(key_path, project, region, bucket, machine_type,
       "\u274c '", region, "' does not look like a region. ",
       "Regions look like us-central1 or europe-west4.\n"))
   }
-
+  
   if (blank(bucket)) {
     msgs <- c(msgs, "\u274c Enter the Cloud Storage bucket to use.\n")
   } else {
@@ -808,7 +1226,7 @@ check_cloud_inputs <- function(key_path, project, region, bucket, machine_type,
       msgs <- c(msgs, paste0("\u274c '", bucket, "' is not a valid bucket name.\n"))
     }
   }
-
+  
   if (blank(machine_type)) {
     msgs <- c(msgs, paste0(
       "\u274c Enter the machine type to rent, for example n2-highmem-8. ",
@@ -818,7 +1236,7 @@ check_cloud_inputs <- function(key_path, project, region, bucket, machine_type,
       "\u26a0\ufe0f '", machine_type, "' was not recognised. ",
       "The run can still be submitted, but capacity cannot be checked beforehand.\n"))
   }
-
+  
   if (blank(image)) {
     msgs <- c(msgs, paste0(
       "\u274c Enter the public GHCR image produced by this package's GitHub ",
@@ -832,10 +1250,10 @@ check_cloud_inputs <- function(key_path, project, region, bucket, machine_type,
       "\u274c '", image, "' is not a valid tagged GHCR image. ",
       "Use ghcr.io/owner/repository:tag and keep owner/repository lower case.\n"))
   }
-
+  
   hard_errors <- grep("^\u274c", msgs, value = TRUE)
   pass <- length(hard_errors) == 0
-
+  
   if (pass && length(msgs) == 0) {
     cores <- parse_machine_type_cores(machine_type)
     return(list(pass = TRUE, msg = paste0(
@@ -844,6 +1262,313 @@ check_cloud_inputs <- function(key_path, project, region, bucket, machine_type,
       ", region ", region, ").\n",
       "Container: ", image, "\n")))
   }
-
+  
   list(pass = pass, msg = paste(msgs, collapse = ""))
+}
+
+
+
+#' @title Check a Density-dependent Response Curve
+#' @description
+#' Evaluates a configured density-dependent growth or mortality
+#' multiplier over an extreme but finite density range.
+#'
+#' The tested density range is expressed relative to the supplied
+#' mean/reference density d:
+#'
+#'   0.05 * d to 20 * d
+#'
+#' Log-spaced points are used because this range spans a 400-fold
+#' change in density.
+#'
+#' @keywords internal
+check_density_response_curve <- function(
+    a,
+    b,
+    c,
+    d,
+    name,
+    type = c("growth", "mortality"),
+    min_density_ratio = 0.05,
+    max_density_ratio = 20,
+    n_points = 201L,
+    max_growth_multiplier = 3
+) {
+  
+  type <- match.arg(type)
+  
+  # ------------------------------------------------------------
+  # 1. Basic scalar checks for a, b, and c
+  #
+  # Their signs are not restricted here. The resulting response
+  # curve, rather than each coefficient separately, is checked.
+  # ------------------------------------------------------------
+  abc <- c(
+    a = suppressWarnings(as.numeric(a)),
+    b = suppressWarnings(as.numeric(b)),
+    c = suppressWarnings(as.numeric(c))
+  )
+  
+  if (
+    length(abc) != 3L ||
+    any(!is.finite(abc))
+  ) {
+    return(
+      list(
+        pass = FALSE,
+        msg = paste0(
+          "❌ Error: [",
+          name,
+          "] parameters a, b, and c must be finite numeric values.\n"
+        ),
+        min_value = NA_real_,
+        max_value = NA_real_
+      )
+    )
+  }
+  
+  # ------------------------------------------------------------
+  # 2. Check mean/reference density
+  #
+  # d may contain more than one value. For example, density-
+  # dependent survival has separate juvenile and adult reference
+  # densities.
+  # ------------------------------------------------------------
+  d <- suppressWarnings(
+    as.numeric(d)
+  )
+  
+  if (
+    length(d) == 0L ||
+    any(!is.finite(d))
+  ) {
+    return(
+      list(
+        pass = FALSE,
+        msg = paste0(
+          "❌ Error: [",
+          name,
+          "] mean/reference density must contain finite numeric values.\n"
+        ),
+        min_value = NA_real_,
+        max_value = NA_real_
+      )
+    )
+  }
+  
+  if (any(d <= 0)) {
+    return(
+      list(
+        pass = FALSE,
+        msg = paste0(
+          "❌ Error: [",
+          name,
+          "] mean/reference density must be greater than 0.\n"
+        ),
+        min_value = NA_real_,
+        max_value = NA_real_
+      )
+    )
+  }
+  
+  # ------------------------------------------------------------
+  # 3. Check the requested testing range
+  # ------------------------------------------------------------
+  if (
+    !is.finite(min_density_ratio) ||
+    !is.finite(max_density_ratio) ||
+    min_density_ratio <= 0 ||
+    max_density_ratio <= min_density_ratio
+  ) {
+    stop(
+      "Invalid density-ratio range supplied to check_density_response_curve().",
+      call. = FALSE
+    )
+  }
+  
+  n_points <- suppressWarnings(
+    as.integer(n_points)
+  )
+  
+  if (
+    length(n_points) != 1L ||
+    is.na(n_points) ||
+    n_points < 2L
+  ) {
+    stop(
+      "n_points must be an integer of at least 2.",
+      call. = FALSE
+    )
+  }
+  
+  # Log spacing gives more useful coverage than linear spacing
+  # across a 400-fold density range.
+  density_ratios <- exp(
+    seq(
+      log(min_density_ratio),
+      log(max_density_ratio),
+      length.out = n_points
+    )
+  )
+  
+  # ------------------------------------------------------------
+  # 4. Calculate the response for every supplied d value
+  # ------------------------------------------------------------
+  response_values <- unlist(
+    lapply(
+      d,
+      function(mean_density) {
+        
+        actual_density <- mean_density * density_ratios
+        
+        relative_density <- actual_density / mean_density
+        
+        if (identical(type, "growth")) {
+          
+          # PG = a + b * exp(-c * D/d)
+          abc[["a"]] +
+            abc[["b"]] *
+            exp(
+              -abc[["c"]] *
+                relative_density
+            )
+          
+        } else {
+          
+          # PV = a + b * (1 - exp(-c * D/d))
+          abc[["a"]] +
+            abc[["b"]] *
+            (
+              1 -
+                exp(
+                  -abc[["c"]] *
+                    relative_density
+                )
+            )
+        }
+      }
+    ),
+    use.names = FALSE
+  )
+  
+  # ------------------------------------------------------------
+  # 5. Reject numerical failures
+  # ------------------------------------------------------------
+  if (
+    length(response_values) == 0L ||
+    any(!is.finite(response_values))
+  ) {
+    return(
+      list(
+        pass = FALSE,
+        msg = paste0(
+          "❌ Error: [",
+          name,
+          "] produces NA, NaN, or infinite multiplier values between ",
+          min_density_ratio * 100,
+          "% and ",
+          max_density_ratio,
+          " times the mean density. ",
+          "The configured parameters are numerically unstable.\n"
+        ),
+        min_value = NA_real_,
+        max_value = NA_real_
+      )
+    )
+  }
+  
+  min_value <- min(response_values)
+  max_value <- max(response_values)
+  
+  # Small tolerance prevents harmless floating-point rounding,
+  # such as -1e-16, from being treated as a true negative value.
+  tolerance <- sqrt(
+    .Machine$double.eps
+  )
+  
+  # ------------------------------------------------------------
+  # 6. Growth response
+  # ------------------------------------------------------------
+  if (identical(type, "growth")) {
+    
+    if (
+      min_value < -tolerance ||
+      max_value > max_growth_multiplier + tolerance
+    ) {
+      return(
+        list(
+          pass = FALSE,
+          msg = paste0(
+            "❌ Error: [",
+            name,
+            "] produces an unrealistic density-dependent growth multiplier.\n",
+            "   Tested density range: ",
+            min_density_ratio * 100,
+            "% to ",
+            max_density_ratio,
+            " times the mean density.\n",
+            "   Resulting PG range: ",
+            round(min_value, 4),
+            " to ",
+            round(max_value, 4),
+            ".\n",
+            "   PG cannot <0 or > ",
+            max_growth_multiplier,
+            ". Please revise parameters a, b, c, or d.\n"
+          ),
+          min_value = min_value,
+          max_value = max_value
+        )
+      )
+    }
+    
+  } else {
+    
+    # ----------------------------------------------------------
+    # 7. Mortality response
+    #
+    # No finite upper limit is imposed. Very large but finite
+    # mortality multipliers are allowed. Negative values are not.
+    # ----------------------------------------------------------
+    if (min_value < -tolerance) {
+      return(
+        list(
+          pass = FALSE,
+          msg = paste0(
+            "❌ Error: [",
+            name,
+            "] produces a negative density-dependent mortality multiplier.\n",
+            "   Tested density range: ",
+            min_density_ratio * 100,
+            "% to ",
+            max_density_ratio,
+            " times the mean density.\n",
+            "   Resulting PV range: ",
+            round(min_value, 4),
+            " to ",
+            round(max_value, 4),
+            ".\n",
+            "   PV must not be negative. Please revise parameters a, b, c, or d.\n"
+          ),
+          min_value = min_value,
+          max_value = max_value
+        )
+      )
+    }
+  }
+  
+  # Remove tiny negative rounding values from the returned summary.
+  if (
+    min_value < 0 &&
+    min_value >= -tolerance
+  ) {
+    min_value <- 0
+  }
+  
+  list(
+    pass = TRUE,
+    msg = "",
+    min_value = min_value,
+    max_value = max_value
+  )
 }

@@ -15,3 +15,4 @@ parse_and_check_vec(
 \description{
 Parses a string to numeric vector with bounds checking.
 }
+\keyword{internal}

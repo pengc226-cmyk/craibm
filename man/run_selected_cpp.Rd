@@ -34,3 +34,4 @@ Chooses the appropriate compiled simulation routine for the
   namespace. That makes it safe to call from parallel workers and from a
   cloud container, not just from the Shiny session.
 }
+\keyword{internal}

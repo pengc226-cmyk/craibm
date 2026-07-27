@@ -16,3 +16,4 @@ A named list of object paths.
 Central definition of where each artefact lives, so the R side
   and the container entry point cannot drift apart.
 }
+\keyword{internal}

@@ -18,3 +18,4 @@ check_design_inputs(
 \description{
 Validates experiment design CSV and vectors.
 }
+\keyword{internal}

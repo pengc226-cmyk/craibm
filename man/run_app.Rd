@@ -15,5 +15,7 @@ application is opened in a browser. Defaults to \code{TRUE}. Set to
 }
 \description{
 Starts the interactive Shiny application for parameterizing,
-  running, and visualizing sportfish IBM simulations.
+  running, and visualizing sportfish IBM simulations. This is the only
+  function the package exports; everything else is internal and is reached
+  through the application itself.
 }

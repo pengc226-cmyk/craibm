@@ -22,3 +22,4 @@ Invisibly \code{TRUE}.
 Writes the payload to a temporary file and stores it in the
   bucket where the container will look for it.
 }
+\keyword{internal}

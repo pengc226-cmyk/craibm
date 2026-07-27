@@ -9,3 +9,4 @@ check_num(val, name, min_val = -Inf, max_val = Inf, is_int = FALSE)
 \description{
 Validates a numeric input against bounds.
 }
+\keyword{internal}

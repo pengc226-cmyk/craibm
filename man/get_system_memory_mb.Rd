@@ -13,3 +13,4 @@ A list with total_mb, available_mb, and used_percent. Falls back to a
 \description{
 Cross-platform total and available system RAM via the ps package.
 }
+\keyword{internal}

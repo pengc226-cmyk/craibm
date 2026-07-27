@@ -15,3 +15,4 @@ Numeric vector (may be length 0).
 \description{
 Parses a comma-separated string into a numeric vector. Handles fullwidth commas.
 }
+\keyword{internal}

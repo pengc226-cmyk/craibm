@@ -28,3 +28,4 @@ Multi-layer hardware detection. Attempts dedicated CLI tools first,
   then falls back to OS-level device enumeration that works without any
   GPU runtime installed. Always returns a usable recommendation.
 }
+\keyword{internal}

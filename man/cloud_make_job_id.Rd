@@ -17,3 +17,4 @@ Creates an identifier that is also used as the folder prefix
   inside the bucket, so every run keeps its payload, progress file, partial
   results and final archive together.
 }
+\keyword{internal}

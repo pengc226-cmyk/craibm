@@ -26,7 +26,7 @@
 #'   results and final archive together.
 #' @param prefix Short label placed at the front of the identifier.
 #' @return A character identifier such as \code{craibm-20260722-1430-8412}.
-#' @export
+#' @keywords internal
 cloud_make_job_id <- function(prefix = "craibm") {
   sprintf(
     "%s-%s-%04d",
@@ -42,7 +42,7 @@ cloud_make_job_id <- function(prefix = "craibm") {
 #'   and the container entry point cannot drift apart.
 #' @param job_id Job identifier.
 #' @return A named list of object paths.
-#' @export
+#' @keywords internal
 cloud_paths <- function(job_id) {
   root <- paste0("jobs/", job_id)
   list(
@@ -62,7 +62,7 @@ cloud_paths <- function(job_id) {
 #' @param bucket Bucket name.
 #' @param job_id Job identifier.
 #' @return A \code{gs://} address.
-#' @export
+#' @keywords internal
 cloud_result_uri <- function(bucket, job_id) {
   paste0("gs://", bucket, "/", cloud_paths(job_id)$results)
 }
@@ -77,7 +77,7 @@ cloud_result_uri <- function(bucket, job_id) {
 #' @param json_path Path to the service-account key file.
 #' @param lifetime_seconds Requested token lifetime. Google caps this at one hour.
 #' @return A list with the token, its expiry time and the key contents.
-#' @export
+#' @keywords internal
 cloud_auth <- function(json_path, lifetime_seconds = 3600L) {
   
   for (pkg in c("httr", "jsonlite", "openssl")) {
@@ -166,7 +166,7 @@ cloud_auth <- function(json_path, lifetime_seconds = 3600L) {
 #'   permanent failure.
 #' @param auth An object from \code{cloud_auth()}.
 #' @return A valid auth object, refreshed if necessary.
-#' @export
+#' @keywords internal
 cloud_refresh_auth <- function(auth) {
   if (is.null(auth) || is.null(auth$expires_at)) return(auth)
   if (Sys.time() < auth$expires_at) return(auth)
@@ -235,7 +235,7 @@ cloud_refresh_auth <- function(auth) {
 #' @param region Batch region such as \code{us-central1}.
 #' @param bucket Cloud Storage bucket name.
 #' @return A list with \code{pass} and a message describing the outcome.
-#' @export
+#' @keywords internal
 cloud_check_setup <- function(auth, project, region, bucket) {
   
   out <- function(pass, msg, service_account = NULL) {
@@ -324,7 +324,7 @@ cloud_check_setup <- function(auth, project, region, bucket) {
 #' @param job_id Job identifier.
 #' @param payload A list holding everything the run needs.
 #' @return Invisibly \code{TRUE}.
-#' @export
+#' @keywords internal
 cloud_upload_payload <- function(auth, bucket, job_id, payload) {
   tmp <- tempfile(fileext = ".rds")
   on.exit(unlink(tmp), add = TRUE)
@@ -412,9 +412,10 @@ cloud_upload_payload <- function(auth, bucket, job_id, payload) {
 #'   Defaults to the account represented by the uploaded JSON key so the
 #'   container and the submitting application use the same explicitly
 #'   configured identity rather than the Compute Engine default account.
-#' @param max_run_seconds Upper bound on run time, after which Batch stops the job.
+#' @param max_run_seconds Upper bound on run time, in seconds. Defaults to
+#'   14 days, which is Google Cloud Batch's own maximum job duration.
 #' @return A list with the submitted job name.
-#' @export
+#' @keywords internal
 cloud_submit_batch <- function(
     auth,
     project,
@@ -425,7 +426,12 @@ cloud_submit_batch <- function(
     task_type,
     image = "ghcr.io/craibm/craibm:latest",
     worker_service_account = NULL,
-    max_run_seconds = 86400L
+    # 14 days. This is not a policy choice made here: it is Google Cloud
+    # Batch's own maximum job duration, and a larger value would be accepted
+    # by the API and then silently clamped to it. The previous value of one
+    # day was an arbitrary cap that killed long runs the user had already
+    # agreed to after seeing the Test 1 estimate.
+    max_run_seconds = 1209600L
 ) {
   
   if (
@@ -519,7 +525,7 @@ cloud_submit_batch <- function(
 #' @param region Region.
 #' @param job_id Job identifier.
 #' @return A list with \code{ok} and, when reachable, \code{state}.
-#' @export
+#' @keywords internal
 cloud_job_state <- function(auth, project, region, job_id) {
   url <- paste0(.cloud_batch_base, "/projects/", project,
                 "/locations/", region, "/jobs/", job_id)
@@ -548,7 +554,7 @@ cloud_job_state <- function(auth, project, region, job_id) {
 #' @param region Region.
 #' @param job_id Job identifier.
 #' @return Invisibly \code{TRUE} when the request was accepted.
-#' @export
+#' @keywords internal
 cloud_cancel_job <- function(auth, project, region, job_id) {
   url <- paste0(.cloud_batch_base, "/projects/", project,
                 "/locations/", region, "/jobs/", job_id)
@@ -578,7 +584,7 @@ cloud_cancel_job <- function(auth, project, region, job_id) {
 #' @param job_id Job identifier.
 #' @param stale_after_seconds How long without an update counts as stalled.
 #' @return A list describing progress, including \code{available} and \code{stale}.
-#' @export
+#' @keywords internal
 cloud_poll_progress <- function(auth, bucket, job_id,
                                 stale_after_seconds = 360) {
   
@@ -637,7 +643,7 @@ cloud_poll_progress <- function(auth, bucket, job_id,
 #' @param job_id Job identifier.
 #' @param dest_dir Folder to unpack into.
 #' @return A list with \code{pass}, a message and the destination folder.
-#' @export
+#' @keywords internal
 cloud_download_results <- function(auth, bucket, job_id, dest_dir) {
   
   if (!dir.exists(dest_dir)) {
@@ -681,7 +687,7 @@ cloud_download_results <- function(auth, bucket, job_id, dest_dir) {
 #' @param job_id Job identifier.
 #' @param dest_dir Folder to place the files in.
 #' @return A list with \code{pass}, a message and the number of files retrieved.
-#' @export
+#' @keywords internal
 cloud_download_partial <- function(auth, bucket, job_id, dest_dir) {
   
   prefix <- paste0(cloud_paths(job_id)$partial, "/")

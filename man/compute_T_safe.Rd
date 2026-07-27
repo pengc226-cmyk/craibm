@@ -53,3 +53,4 @@ Calculates the maximum number of months that newly-recruited
   even the fastest-growing bootstrap fish must not exceed juv_onlyM_len
   before T_safe.
 }
+\keyword{internal}

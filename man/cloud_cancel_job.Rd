@@ -22,3 +22,4 @@ Invisibly \code{TRUE} when the request was accepted.
 Deletes the job, which stops the machines and therefore the
   charges. Results already synchronised to the bucket remain available.
 }
+\keyword{internal}

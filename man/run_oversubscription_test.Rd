@@ -51,3 +51,4 @@ Runs the user's current run-control configuration to estimate
   and blocked when it reaches the hard total-RAM limit. The function also
   estimates whether sequential replicate batching can make the plan runnable.
 }
+\keyword{internal}

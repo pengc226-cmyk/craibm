@@ -18,3 +18,4 @@ A \code{gs://} address.
 The address shown to the user so they can retrieve results
   themselves if they close the application while a job is still running.
 }
+\keyword{internal}

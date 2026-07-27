@@ -9,7 +9,7 @@
 Helper functions for the craibm package, including VBGF bootstrapping, Z estimation, and batch simulation runners.
 }
 \author{
-\strong{Maintainer}: Developer Name \email{dev@example.com}
+\strong{Maintainer}: Peng Chen \email{peng.chen@siu.edu} (Center for Fisheries, Aquaculture, and Aquatic Sciences, Southern Illinois University Carbondale) [copyright holder]
 
 }
 \keyword{internal}

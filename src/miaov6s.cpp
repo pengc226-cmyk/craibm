@@ -2158,20 +2158,16 @@ std::vector<MonthlyStats> run_policy_phase_v2(
     // Density for this month's growth is evaluated BEFORE recruit-entry batch
     double ff_juv_before_growth = ff_mgr.enabled() ? ff_mgr.total_juveniles() : 0.0;
     
-    // Count juveniles BEFORE growth runs. growthf_pool advances ages in place,
-    // so a count taken afterwards would drop the fish that crossed
-    // min_adult_age during this step. The matrix engine counts from its
-    // untouched input matrix, and taking the count first keeps the two
-    // engines in step.
-    double juvN_growth = count_juveniles_pool(pool, min_adult_age) + ff_juv_before_growth;
-    double juv_dens_growth = (lake_area_ha > 1e-6) ? (juvN_growth / lake_area_ha) : 0.0;
-    double PD_juv_growth = (g1_d_avg > 1e-6) ? (juv_dens_growth / g1_d_avg) : 0.0;
-    double PG_juv_growth = g1_a + g1_b * std::exp(-g1_c * PD_juv_growth);
-    
     // Growth (in-place on FishPool)
     growthf_pool(pool, g1_d_avg, g1_a, g1_b, g1_c,
                  g2_d_avg, g2_a, g2_b, g2_c, lake_area_ha, min_adult_age,
                  ff_juv_before_growth);
+    
+    // Batch growth factor PG uses same pre-entry density as main-pop growth
+    double juvN_growth = count_juveniles_pool(pool, min_adult_age) + ff_juv_before_growth;
+    double juv_dens_growth = (lake_area_ha > 1e-6) ? (juvN_growth / lake_area_ha) : 0.0;
+    double PD_juv_growth = (g1_d_avg > 1e-6) ? (juv_dens_growth / g1_d_avg) : 0.0;
+    double PG_juv_growth = g1_a + g1_b * std::exp(-g1_c * PD_juv_growth);
     
     // Recruitment — spawning
     if (month_of_year == spawn_month) {
@@ -2304,7 +2300,6 @@ std::vector<MonthlyStats> run_policy_phase_v2(
 //   gpu_threads:  threads for combo-level parallelism (0 = serial)
 // =============================================================================
 
-//' @export
  // [[Rcpp::export]]
  List run_simulation_v2_cpp(
      NumericVector zr_w_dist, NumericVector month_weights,
@@ -2442,20 +2437,16 @@ std::vector<MonthlyStats> run_policy_phase_v2(
      // Density for this month's growth is evaluated BEFORE recruit-entry batch
      double ff_juv_before_growth = ff_mgr.enabled() ? ff_mgr.total_juveniles() : 0.0;
      
-     // Count juveniles BEFORE growth runs. growthf_pool advances ages in place,
-     // so a count taken afterwards would drop the fish that crossed
-     // min_adult_age during this step. The matrix engine counts from its
-     // untouched input matrix, and taking the count first keeps the two
-     // engines in step.
-     double juvN_growth = count_juveniles_pool(pool, min_adult_age) + ff_juv_before_growth;
-     double juv_dens_growth = (lake_area_ha > 1e-6) ? (juvN_growth / lake_area_ha) : 0.0;
-     double PD_juv_growth = (g1_d_avg > 1e-6) ? (juv_dens_growth / g1_d_avg) : 0.0;
-     double PG_juv_growth = g1_a + g1_b * std::exp(-g1_c * PD_juv_growth);
-     
      // Growth (in-place on pool)
      growthf_pool(pool, g1_d_avg, g1_a, g1_b, g1_c,
                   g2_d_avg, g2_a, g2_b, g2_c, lake_area_ha, min_adult_age,
                   ff_juv_before_growth);
+     
+     // Batch growth factor PG uses same pre-entry density as main-pop growth
+     double juvN_growth = count_juveniles_pool(pool, min_adult_age) + ff_juv_before_growth;
+     double juv_dens_growth = (lake_area_ha > 1e-6) ? (juvN_growth / lake_area_ha) : 0.0;
+     double PD_juv_growth = (g1_d_avg > 1e-6) ? (juv_dens_growth / g1_d_avg) : 0.0;
+     double PG_juv_growth = g1_a + g1_b * std::exp(-g1_c * PD_juv_growth);
      
      // Spawning
      if (month_of_year == spawn_month) {

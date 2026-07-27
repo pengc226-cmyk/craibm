@@ -9,3 +9,4 @@ check_boot_outcomes(theta_df, expected_runs)
 \description{
 Validates bootstrap results for sufficient clean runs.
 }
+\keyword{internal}
